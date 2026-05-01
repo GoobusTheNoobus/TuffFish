@@ -3,10 +3,12 @@
 #include <cstdint>
 #include <string>
 #include <array>
+#include <sstream>
+#include <iostream>
 
 namespace TuffChess {
 using Bitboard = uint64_t;
-using BBFunction = Bitboard (*)(Square, Bitboard);
+
 
 enum Square: uint8_t {
 A1, B1, C1, D1, E1, F1, G1, H1,
@@ -64,6 +66,8 @@ inline PieceType type_of(Piece p) { return PieceType(p % 6); }
 inline Color     color_of(Piece p) { return Color(p / 6); }
 
 inline Color operator!(Color& c) { return c == WHITE ? BLACK: WHITE; }
+inline PieceType operator++(PieceType& pt) { return pt = PieceType(pt + 1); }
+inline PieceType operator++(PieceType& pt, int) { PieceType old = pt; ++pt; return old; }
 
 enum CastlingRight: uint8_t {
     NO_CASTLING = 0,
@@ -71,7 +75,10 @@ enum CastlingRight: uint8_t {
     WHITE_KS = 1,
     WHITE_QS = 2,
     BLACK_KS = 4,
-    BLACK_QS = 8
+    BLACK_QS = 8,
+
+    WHITE_CASTLING = WHITE_KS | WHITE_QS,
+    BLACK_CASTLING = BLACK_KS | BLACK_QS
 };
 
 enum Direction: int8_t {
@@ -86,9 +93,9 @@ enum Direction: int8_t {
     SOUTH_EAST = SOUTH + EAST
 };
 
-inline Square operator+(Square& square, Direction& dir) { return Square(square + int(dir)); }
-inline Square operator-(Square& square, Direction& dir) { return Square(square - int(dir)); }
-inline Direction operator*(Direction& dir, int n) { return Direction(int(dir) * n); }
+inline Square operator+(const Square& square, const Direction& dir) { return Square(square + int(dir)); }
+inline Square operator-(const Square& square, const Direction& dir) { return Square(square - int(dir)); }
+inline Direction operator*(const Direction& dir, const int n) { return Direction(int(dir) * n); }
 
 // Move representation & storage
 using Move = uint16_t;
@@ -104,6 +111,8 @@ enum MoveFlag: uint8_t {
     QPROMO,
 };
 
+inline constexpr const char* const promo_chars = "nbrq";
+
 // Move helpers
 // Encoding: 
 // 0-5   From
@@ -116,9 +125,12 @@ inline std::string algebraic(Move move) {
     std::string from_str = square_str[from(move)];
     std::string dest_str = square_str[dest(move)];
 
+    MoveFlag f = flag(move);
 
+    if (f >= NPROMO) 
+        return from_str + dest_str + promo_chars[f - NPROMO];
 
-    // TODO: Finish rest
+    return from_str + dest_str;
 }
 
 inline Move create_move(Square from, Square dest, MoveFlag flag) { return Move(uint16_t(from) | (uint16_t(dest) << 6) | (uint16_t(flag) << 12)); }
@@ -128,14 +140,39 @@ struct MoveList {
     std::array<Move, 256> data;
     int count = 0;
 
+    CastlingRight prev_castling;
+    Square prev_ep;
+    uint8_t prev_r50;
+
     inline Move  operator[](int i) { return data[i]; }
     inline int   size() { return count; }
     inline Move* begin() { return data.data(); }
     inline Move* end()  { return data.data() + count; }
 
     inline void add(Move move) { data[count++] = move; }
+
 };
 
+inline std::ostream& operator<<(std::ostream& os, MoveList& moves) {
+    for (Move move: moves) {
+        os << algebraic(move) << "\n";
+    }
 
+    os << "Castling: " << int(moves.prev_castling) << std::endl;
+    os << "EP: " << int(moves.prev_ep) << std::endl;
+    os << "R50" << moves.prev_r50 << std::endl;
+    return os;
+
+} 
+
+constexpr const int MAX_PLY = 100;
+
+using Score = int;
+
+constexpr Score MATE_CP    = 10000;
+constexpr Score MAX_CP     = MATE_CP - MAX_PLY;
+constexpr Score DRAW_CP    = 0;
+constexpr Score INF_CP     = 20000;
+constexpr Score TIMEOUT_CP = 30000;
 
 } // namespace TuffChess

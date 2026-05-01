@@ -1,14 +1,14 @@
 #include <iostream>
-#include "position.hpp"
+
+#include "uci.hpp"
+
 
 using namespace TuffChess;
 
 int main(void) {
-    std::cout << "TuffChess Chess Engine v0.0.1 made by GoobusTheNoobus\n";
+    std::cout << "TuffChess Chess Engine made by GoobusTheNoobus\n";
 
-    Position pos;
-
-    std::cout << pos;
+    UCI::loop();
 
     return 0;
 }

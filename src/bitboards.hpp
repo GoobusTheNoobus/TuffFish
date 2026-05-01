@@ -47,7 +47,6 @@ constexpr std::array<Bitboard, FILE_NB> FILE_BB = {
     0x8080808080808080
 };
 
-
 Bitboard knight_attack(Square square);
 Bitboard king_attack(Square square);
 Bitboard pawn_attack(Square square, Color color);
@@ -56,7 +55,7 @@ Bitboard bishop_attack(Square square, Bitboard occ);
 Bitboard rook_attack(Square square, Bitboard occ);
 Bitboard queen_attack(Square square, Bitboard occ);
 
-Bitboard initialize();
+void initialize();
 
 } // namespace Bitboards
 } // namespace TuffChess

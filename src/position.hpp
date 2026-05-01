@@ -26,13 +26,21 @@ class Position {
     inline Color get_side() const { return side_to_move; }
     inline bool  white_to_move() const { return side_to_move == WHITE; }
 
-    void generate_moves(MoveList& moves);
+    Score psqt_eval() const;
+
+    void generate_moves(MoveList& moves) const;
 
     // Helpers
     void parse_fen(const std::string& fen);
 
-    bool is_attacked(Square square, Color by);
-    bool is_in_check(Color c);
+    bool is_attacked(Square square, Color by) const;
+    bool is_in_check(Color c) const;
+
+    void make_move(Move move);
+    void make_move(const std::string& str);
+    void undo_move(Move move, const MoveList& list);
+
+    
 
     private:
     // Data members
@@ -44,7 +52,13 @@ class Position {
     Color         side_to_move;
     CastlingRight castling;
     Square        en_passant_square;
-    int           rule_50;
+    int           rule_50 = 0;
+
+    Score mg_psqt_score = 0;
+    Score eg_psqt_score = 0;
+
+    std::array<Piece, MAX_PLY> capture_stack;
+    int ply = 0;
 
     // Helper functions
     void clear();
@@ -54,7 +68,7 @@ class Position {
     
 
     template <PieceType pt>
-    void generate_piece_moves(MoveList& list);
+    void generate_piece_moves(MoveList& list) const;
 
 };    
 

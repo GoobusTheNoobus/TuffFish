@@ -1,9 +1,12 @@
 #include "bitboards.hpp"
 
+#include <intrin.h>
+
 namespace TuffChess {
 namespace Bitboards {
 namespace {
 
+// =========================== Constant Attack Tables ===========================
 
 constexpr Bitboard KNIGHT_ATTACKS[SQUARE_NB] = {
     0x0000000000020400ULL, 0x0000000000050800ULL, 0x00000000000A1100ULL, 0x0000000000142200ULL,
@@ -81,6 +84,8 @@ constexpr Bitboard PAWN_ATTACKS[COLOR_NB][SQUARE_NB] = {
     0x0028000000000000ULL, 0x0050000000000000ULL, 0x00A0000000000000ULL, 0x0040000000000000ULL,
     }
 };
+
+// =========================== Constant Slider Masks & Magic Numbers ===========================
 
 constexpr Bitboard BISHOP_MASKS[SQUARE_NB] = {
     0x0040201008040200ULL, 0x0000402010080400ULL, 0x0000004020100A00ULL, 0x0000000040221400ULL,
@@ -202,6 +207,8 @@ constexpr int ROOK_OFFSETS[64] = {
     81920, 86016, 88064, 90112, 92160, 94208, 96256, 98304,
 };
 
+// =========================== Magic Slider Implementation ===========================
+
 constexpr int BISHOP_SIZE = 5248;
 constexpr int ROOK_SIZE = 102400;
 
@@ -209,13 +216,10 @@ Bitboard BISHOP_ATTACKS[BISHOP_SIZE];
 Bitboard ROOK_ATTACKS[ROOK_SIZE];
 
 std::pair<int, int>
-bishop_vectors[4] = {{1, 1}, {1, -1}, {-1, 1}, {-1, 1}}, 
+bishop_vectors[4] = {{1, 1}, {1, -1}, {-1, 1}, {-1, -1}}, 
 rook_vectors[4] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 
-bool out_of_bounds(int x, int y) {
-    if (x > 7 || x < 0 || y > 7 || y < 0) return true;
-    return false;
-}
+bool out_of_bounds(int x, int y) { return x > 7 || x < 0 || y > 7 || y < 0; }
 
 Bitboard raycast_bishop(Square square, Bitboard blockers) {
     Bitboard mask = 0;
@@ -268,53 +272,63 @@ Bitboard raycast_rook(Square square, Bitboard blockers) {
 }
 
 int hash_bishop(Square square, Bitboard blockers) {
-    return ((blockers & BISHOP_MASKS[square]) * BISHOP_MAGICS[square]) >> (64 - BISHOP_RELEVANCIES[square]);
+    #ifdef __BMI2__ 
+        return _pext_u64(blockers, BISHOP_MASKS[square]);
+    #else
+        return ((blockers & BISHOP_MASKS[square]) * BISHOP_MAGICS[square]) >> (64 - BISHOP_RELEVANCIES[square]);
+    #endif
 }
 
 int hash_rook(Square square, Bitboard blockers) {
-    return ((blockers & ROOK_MASKS[square]) * ROOK_MAGICS[square]) >> (64 - ROOK_RELEVANCIES[square]);
+    #ifdef __BMI2__ 
+        return _pext_u64(blockers, ROOK_MASKS[square]);
+    #else
+        return ((blockers & ROOK_MASKS[square]) * ROOK_MAGICS[square]) >> (64 - ROOK_RELEVANCIES[square]);
+    #endif
 }
 
 Bitboard generate_blocker(int index, Bitboard mask) {
     Bitboard blocker = 0;
-
     int bitnum = 0;
 
     while (mask) {
         int square = pop_lsb(mask);
 
-        if (index & SQUARE_BB[mask]) blocker |= SQUARE_BB[square];
-
+        if (index & SQUARE_BB[bitnum]) blocker |= SQUARE_BB[square];
         ++bitnum;
     }
 
     return blocker;
 }
 
-} // namespace
+}
 
-Bitboard initialize() {
+void initialize() {
+    #ifdef __BMI2__ 
+        #pragma message("BMI2 supported")
+    #else
+        #pragma message("BMI2 not supported")
+    #endif
     for (Square square = A1; square < SQUARE_NB; ++square) {
-        // Init bishop
-        for (int i = 0; i < SQUARE_BB[BISHOP_RELEVANCIES[square]]; ++i) {
+        for (int i = 0; i < int(SQUARE_BB[BISHOP_RELEVANCIES[square]]); ++i) {
+            Bitboard blockers = generate_blocker(i, BISHOP_MASKS[square]);
             BISHOP_ATTACKS[BISHOP_OFFSETS[square] + 
-            hash_bishop(square, generate_blocker(i, BISHOP_MASKS[square]))];
+            hash_bishop(square, blockers)] = raycast_bishop(square, blockers);
         }
-
-        // Init rook
-        for (int i = 0; i < SQUARE_BB[ROOK_RELEVANCIES[square]]; ++i) {
+        for (int i = 0; i < int(SQUARE_BB[ROOK_RELEVANCIES[square]]); ++i) {
+            Bitboard blockers = generate_blocker(i, ROOK_MASKS[square]);
             ROOK_ATTACKS[ROOK_OFFSETS[square] + 
-            hash_rook(square, generate_blocker(i, ROOK_MASKS[square]))];
+            hash_rook(square, blockers)] = raycast_rook(square, blockers);
         }
     }
 }
+
+// =========================== Bitboard Lookups ===========================
 
 Bitboard knight_attack(Square square) { return KNIGHT_ATTACKS[square]; }
 Bitboard king_attack(Square square) { return KING_ATTACKS[square]; }
 Bitboard pawn_attack(Square square, Color color) { return PAWN_ATTACKS[color][square]; }
 
-// The following assumes that initialize() has been
-// called at startup
 Bitboard bishop_attack(Square square, Bitboard occ) { return BISHOP_ATTACKS[BISHOP_OFFSETS[square] + hash_bishop(square, occ)]; }
 Bitboard rook_attack(Square square, Bitboard occ) { return ROOK_ATTACKS[ROOK_OFFSETS[square] + hash_rook(square, occ)]; }
 Bitboard queen_attack(Square square, Bitboard occ) { return bishop_attack(square, occ) | rook_attack(square, occ); }
