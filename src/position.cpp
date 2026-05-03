@@ -4,7 +4,7 @@
 
 #include <sstream>
 
-namespace TuffChess {
+namespace TuffFish {
 
 inline constexpr const std::string_view piece_chars("PNBRQKpnbrqk ");
 
@@ -82,6 +82,8 @@ void Position::parse_fen(const std::string& fen) {
             case 'q':
                 castling = CastlingRight(castling | BLACK_QS);
                 break;
+            case '-':
+                break;
             default:
                 return;
         }
@@ -113,6 +115,9 @@ void Position::clear() {
     castling = NO_CASTLING;
     en_passant_square = NO_SQUARE;
     rule_50 = 0;
+    mg_psqt_score = 0;
+    eg_psqt_score = 0;
+    ply = 0;
 }
 
 void Position::clear(Square square) {
@@ -313,9 +318,7 @@ void Position::generate_moves(MoveList& moves) const {
         }
     }
 
-    moves.prev_castling = castling;
-    moves.prev_ep       = en_passant_square;
-    moves.prev_r50      = rule_50;
+    
 
 }
 
@@ -481,13 +484,14 @@ void Position::make_move(const std::string& str) {
     for (Move m: list) {
         if (algebraic(m) == str) {
             make_move(m);
+            ply = 0;
             return;
         }
     }
 }
 
 // list is needed to reset game states
-void Position::undo_move(Move move, const MoveList& list) {
+void Position::undo_move(Move move, const StoredGameState& gs) {
     side_to_move = !side_to_move;
 
     bool is_white = side_to_move == WHITE;
@@ -500,9 +504,9 @@ void Position::undo_move(Move move, const MoveList& list) {
     Piece captured = capture_stack[--ply];
 
     // Restore previous states
-    castling = list.prev_castling;
-    en_passant_square = list.prev_ep;
-    rule_50 = list.prev_r50;
+    castling = gs.prev_castling;
+    en_passant_square = gs.prev_ep;
+    rule_50 = gs.prev_r50;
 
     clear(dest_squ);
 

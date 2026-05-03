@@ -4,7 +4,7 @@
 #include "bitboards.hpp"
 #include "position.hpp"
 
-namespace TuffChess {
+namespace TuffFish {
     // These are some very tuned precise accurate piece values:
     // Source: my ah
     constexpr Score PAWN_VALUE_MG   = 96;
@@ -72,8 +72,8 @@ namespace TuffChess {
                 -20,-10,-10, -5, -5,-10,-10,-20,
                 -10,  0,  0,  0,  0,  0,  0,-10,
                 -10,  0,  5,  5,  5,  5,  0,-10,
-                -5,  0,  5,  5,  5,  5,  0, -5,
-                0,  0,  5,  5,  5,  5,  0, -5,
+                 -5,  0,  5,  5,  5,  5,  0, -5,
+                  0,  0,  5,  5,  5,  5,  0, -5,
                 -10,  5,  5,  5,  5,  5,  0,-10,
                 -10,  0,  5,  0,  0,  0,  0,-10,
                 -20,-10,-10, -5, -5,-10,-10,-20
@@ -162,7 +162,7 @@ namespace TuffChess {
             for (PieceType pt = PAWN; pt < PT_NB; ++pt) {
                 for (Square squ = A1; squ < SQUARE_NB; ++squ) {
                     PSQT_VALUE_MG[pt][squ] = MG_VALUES[pt] + PSQT_MG[pt][squ];
-                    PSQT_VALUE_EG[pt][squ] = EG_VALUES[pt] + PSQT_MG[pt][squ];
+                    PSQT_VALUE_EG[pt][squ] = EG_VALUES[pt] + PSQT_EG[pt][squ];
                 }
             }
         }

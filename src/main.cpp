@@ -3,10 +3,10 @@
 #include "uci.hpp"
 
 
-using namespace TuffChess;
+using namespace TuffFish;
 
 int main(void) {
-    std::cout << "TuffChess Chess Engine made by GoobusTheNoobus\n";
+    std::cout << "TuffFish Chess Engine made by GoobusTheNoobus\n";
 
     UCI::loop();
 

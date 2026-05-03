@@ -5,19 +5,19 @@
 #include "evaluate.hpp"
 #include "engine.hpp"
 
-#include <functional>
-#include <unordered_map>
 #include <thread>
 
-namespace TuffChess {
+namespace TuffFish {
 namespace UCI {
+
+    
 
     inline void info_string(const std::string& msg) {
         std::cout << "info string " << msg << std::endl;
     }
     inline void info_depth(int depth, Score score, uint64_t nodes, uint64_t elapsed, MoveList& pv) {
         std::string score_string;
-        if (std::abs(score) > MAX_CP) {
+        if (std::abs(score) >= MAX_CP) {
             int mate_dist = (MATE_CP - std::abs(score) + 1) / 2;
 
             if (score < 0) 
@@ -39,20 +39,30 @@ namespace UCI {
         std::cout << std::endl;
     }
 
+
     namespace {
 
         Position position;
         std::thread search_thread;
 
+        inline void stop() {
+            request_stop();
+            if (search_thread.joinable()) {
+                info_string("joining search thread");
+                search_thread.join();
+                info_string("joined search thread");
+            }
+        }
+
         void handle_uci() {
             std::cout << "id name TuffChess v0.9.0\n" <<
                          "id author GoobusTheNoobus\n" <<
+                         "\nuciok" <<
                          std::endl;    
         }
         void handle_go(std::istringstream& iss) {
 
-            request_stop();
-            if (search_thread.joinable()) search_thread.join();
+            stop();
 
             std::string token;
 
@@ -101,7 +111,7 @@ namespace UCI {
                 int our_inc  = position.get_side() == WHITE ? winc : binc;
 
                 time_limit = std::min(our_time / 20 + our_inc / 2, our_time);
-                time_limit = std::min(time_limit, 10000);
+                
 
                 
             }
@@ -109,13 +119,20 @@ namespace UCI {
             if (depth < 1) depth = MAX_PLY;
             if (depth > MAX_PLY) depth = MAX_PLY;
 
-            search_thread = std::thread([depth, time_limit](){
-                search(position, depth, time_limit);
+            search_thread = std::thread([depth, time_limit]() mutable {
+                Position copy = position;
+                try {
+                    search(copy, depth, time_limit);
+                } catch (const std::exception& e) {
+                    std::cout << "Search crashed: " << e.what() << std::endl;
+                } catch (...) {
+                    std::cout << "Search crashed due to unknown causes" << std::endl;
+                }
+                
             });
         }
         void handle_position(std::istringstream& iss) {
-            request_stop();
-            if (search_thread.joinable()) search_thread.join();
+            stop();
 
             std::string token;
 
@@ -145,14 +162,34 @@ namespace UCI {
         void handle_isready() {
             std::cout << "readyok" << std::endl;
         }
+        void ucinewgame() {
+            
+        }
 
 
-        std::unordered_map<std::string, std::function<void(std::istringstream&)>> handlers = {
-            {"uci", [](std::istringstream&) {handle_uci(); }},
-            {"isready", [](std::istringstream&){handle_isready(); }},
-            {"go", [](std::istringstream& iss){handle_go(iss); }},
-            {"position", [](std::istringstream& iss){handle_position(iss); }}
-        };
+        inline void dispatch(const std::string& cmd, std::istringstream& iss) {
+            if (cmd == "uci") {
+                handle_uci();
+            }
+            else if (cmd == "isready") {
+                handle_isready();
+            }
+            else if (cmd == "go") {
+                handle_go(iss);
+            }
+            else if (cmd == "position") {
+                handle_position(iss);
+            }
+            else if (cmd == "ucinewgame") {
+                ucinewgame();
+            }
+            else if (cmd == "d") {
+                std::cout << position << std::endl;
+            }
+            else {
+                info_string("invalid command");
+            }
+        }
     }
 
     inline void loop() {
@@ -161,30 +198,25 @@ namespace UCI {
 
         while (true) {
             std::string command;
-            std::getline(std::cin, command);
+            if (!std::getline(std::cin, command)) {
+                stop();
+                break;
+            }
             std::istringstream iss(command);
             std::string token;
 
             if (command.find_first_not_of(" ") == std::string::npos) continue;
 
             iss >> token;
-
-            auto it = handlers.find(token);
-            if (it != handlers.end()) it->second(iss);
-            else {
-                if (token == "quit") {
-                    request_stop();
-                    if (search_thread.joinable()) search_thread.join();
-                    break;
-                } else if (token == "stop") {
-                    request_stop();
-                    if (search_thread.joinable()) search_thread.join();
-                }
-                else {
-                    continue;
-                }
+            if (token == "quit") {
+                stop();
+                break;
+            } else if (token == "stop") {
+                stop();
+                continue;
             }
 
+            dispatch(token, iss);
         }
     }
 }

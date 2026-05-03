@@ -2,7 +2,9 @@
 
 #include "types.hpp"
 
-namespace TuffChess {
+namespace TuffFish {
+
+struct StoredGameState;
 
 inline constexpr const char* const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";   
 
@@ -18,13 +20,19 @@ class Position {
     Position(const std::string& fen);
 
     // Lookups
-    inline Piece    piece_on(Square square) const { return board[square]; }
+    inline Piece    piece_on(Square square) const { 
+        return board[square]; 
+    }
     inline Bitboard bitboard(Piece piece) const { return piece_bb[piece]; }
     inline Bitboard bitboard(Color color) const { return color_bb[color]; }
     inline Bitboard bitboard() const { return occupancy; }
 
     inline Color get_side() const { return side_to_move; }
     inline bool  white_to_move() const { return side_to_move == WHITE; }
+
+    inline CastlingRight get_castling() const { return castling; }
+    inline Square get_ep_square() const { return en_passant_square; }
+    inline uint8_t get_rule_50() const { return rule_50; }
 
     Score psqt_eval() const;
 
@@ -38,7 +46,7 @@ class Position {
 
     void make_move(Move move);
     void make_move(const std::string& str);
-    void undo_move(Move move, const MoveList& list);
+    void undo_move(Move move, const StoredGameState& gs);
 
     
 
@@ -57,7 +65,7 @@ class Position {
     Score mg_psqt_score = 0;
     Score eg_psqt_score = 0;
 
-    std::array<Piece, MAX_PLY> capture_stack;
+    std::array<Piece, 1000> capture_stack;
     int ply = 0;
 
     // Helper functions
@@ -73,6 +81,18 @@ class Position {
 };    
 
 std::ostream& operator<<(std::ostream& os, const Position& pos);
+
+struct StoredGameState {
+    CastlingRight prev_castling;
+    Square prev_ep;
+    uint8_t prev_r50;
+
+    inline StoredGameState(const Position& pos) {
+        prev_castling = pos.get_castling();
+        prev_ep = pos.get_ep_square();
+        prev_r50 = pos.get_rule_50();
+    }
+};
 
 } // namespace TuffChess
 

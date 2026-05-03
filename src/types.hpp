@@ -6,9 +6,10 @@
 #include <sstream>
 #include <iostream>
 
-namespace TuffChess {
+namespace TuffFish {
 using Bitboard = uint64_t;
 
+class Position;
 
 enum Square: uint8_t {
 A1, B1, C1, D1, E1, F1, G1, H1,
@@ -103,8 +104,8 @@ using Move = uint16_t;
 enum MoveFlag: uint8_t {
     NORMAL,
     CASTLING,
-    EN_PASSANT,
     DOUBLE_PUSH,
+    EN_PASSANT,
     NPROMO,
     BPROMO,
     RPROMO,
@@ -140,10 +141,6 @@ struct MoveList {
     std::array<Move, 256> data;
     int count = 0;
 
-    CastlingRight prev_castling;
-    Square prev_ep;
-    uint8_t prev_r50;
-
     inline Move  operator[](int i) { return data[i]; }
     inline int   size() { return count; }
     inline Move* begin() { return data.data(); }
@@ -157,13 +154,11 @@ inline std::ostream& operator<<(std::ostream& os, MoveList& moves) {
     for (Move move: moves) {
         os << algebraic(move) << "\n";
     }
-
-    os << "Castling: " << int(moves.prev_castling) << std::endl;
-    os << "EP: " << int(moves.prev_ep) << std::endl;
-    os << "R50" << moves.prev_r50 << std::endl;
     return os;
 
 } 
+
+
 
 constexpr const int MAX_PLY = 100;
 

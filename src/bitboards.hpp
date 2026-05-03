@@ -2,7 +2,7 @@
 
 #include "types.hpp"
 
-namespace TuffChess {
+namespace TuffFish {
 
 inline int ctz(Bitboard bb) { return __builtin_ctzll(bb); }
 inline int cnt(Bitboard bb) { return __builtin_popcountll(bb); }

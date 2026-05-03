@@ -1,19 +1,35 @@
-CXX = g++
-CXXFlags = -std=c++20 -O3 -march=native -mbmi2 -flto -Wall -Wextra -pthread -DNDEBUG -MMD -MP
+CXX = clang++
+
+COMMON_FLAGS = -std=c++20 -Wall -Wextra -MMD -MP
+
+RELEASE_FLAGS = -O3 -march=native -mbmi2 -DNDEBUG
+DEBUG_FLAGS = -O0 -g
 
 SRC = $(wildcard src/*.cpp)
 OBJ = $(SRC:.cpp=.o)
+DEP = $(OBJ:.o=.d)
 
-TARGET = tuffchess
+TARGET = tufffish_test
 
--include $(OBJS:.o=.d)
+-include $(DEP)
 
-all: $(TARGET)
+.DEFAULT_GOAL := release
+
+# Release build
+release: CXXFLAGS = $(COMMON_FLAGS) $(RELEASE_FLAGS)
+release: clean $(TARGET)
+
+# Debug
+debug: CXXFLAGS = $(COMMON_FLAGS) $(DEBUG_FLAGS)
+debug: clean $(TARGET)
 
 $(TARGET): $(OBJ)
-	$(CXX) $(CXXFlags) $(OBJ) -o $(TARGET)
+	$(CXX) $(CXXFLAGS) $(OBJ) -o $(TARGET)
+
 src/%.o: src/%.cpp
-	$(CXX) $(CXXFlags) -c $< -o $@
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+.PHONY: release debug clean
 
 clean:
-	rm $(TARGET) $(OBJ)
+	rm -f $(TARGET) $(OBJ) $(DEP)

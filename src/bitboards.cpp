@@ -2,7 +2,7 @@
 
 #include <intrin.h>
 
-namespace TuffChess {
+namespace TuffFish {
 namespace Bitboards {
 namespace {
 
