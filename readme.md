@@ -9,3 +9,4 @@ Features:
 
 Updates & Elo increase:
 - Quiescence Search (+65.9) Note: Results suggests that QSearch may be stronger, as 3-fold repetition detection hasn't been implemented yet, making winning positions drawn due to ignorance on the engine's part.
+- Move ordering (+470.4) 

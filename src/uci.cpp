@@ -13,14 +13,12 @@ std::thread search_thread;
 void stop() {
     request_stop();
     if (search_thread.joinable()) {
-        info_string("joining search thread");
         search_thread.join();
-        info_string("joined search thread");
     }
 }
 
 void handle_uci() {
-    std::cout << "id name TuffChess v0.9.0\n" <<
+    std::cout << "id name TuffChess v1.0.0\n" <<
                     "id author GoobusTheNoobus\n" <<
                     "\nuciok" <<
                     std::endl;    
@@ -89,11 +87,11 @@ void handle_go(std::istringstream& iss) {
         
     });
 }
+
 void handle_position(std::istringstream& iss) {
     stop();
 
     std::string token;
-
     iss >> token;
 
     if (token == "startpos") {

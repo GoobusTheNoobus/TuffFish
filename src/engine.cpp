@@ -35,6 +35,77 @@ constexpr int DELTA_MARGIN        = MG_VALUES[PAWN] * 2;
 
 // =========================== Engine & Search Implementation ===========================
 
+namespace {
+
+using ScoreList = std::array<int, 256>;
+
+static constexpr Score PROMO_SCORE_BONUS[] = {
+    KNIGHT_VALUE_MG - PAWN_VALUE_MG,
+    BISHOP_VALUE_MG - PAWN_VALUE_MG,
+    ROOK_VALUE_MG   - PAWN_VALUE_MG,
+    QUEEN_VALUE_MG  - PAWN_VALUE_MG
+};
+
+// Stockfish does this btw
+struct MovePick {
+    MoveList  list;
+    ScoreList scores;
+    Move*     current;
+
+    
+
+    int score_move(const Position& pos, Move m) {
+        Piece captured = pos.piece_on(dest(m));
+        Piece moved    = pos.piece_on(from(m));
+        MoveFlag flag_ = flag(m);
+
+        if (captured != NO_PIECE) {
+            Score victim = flag_ == EN_PASSANT ? make_piece(PAWN, opposite(color_of(moved))) : MG_VALUES[type_of(captured)];
+            Score attacker = MG_VALUES[type_of(moved)];
+
+            return 1'000'000 + (10'000 * victim) - (attacker * 1000);
+        } else if (flag_ >= NPROMO) {
+            return PROMO_SCORE_BONUS[flag_ - NPROMO] + 900'000;
+        }
+        return 0;
+    }
+
+    MovePick(const Position& pos) {
+        current = list.begin();
+  
+        pos.generate_moves(list);
+        // Cache scores into seperate array
+        for (int i = 0; i < list.size(); ++i) {
+            Move m = list[i];
+
+            scores[i] = score_move(pos, m);
+        }
+
+    }
+
+    Move* next() {
+        if (current >= list.end()) return nullptr;
+
+        Move* best = current;
+        for (Move* m = current + 1; m != list.end(); ++m) {
+            if (scores[m - list.begin()] > scores[best - list.begin()])
+                best = m;
+        }
+
+        auto ci = current - list.begin();
+        auto bi = best - list.begin();
+        std::swap(scores[ci], scores[bi]);
+        std::swap(*current, *best);
+
+        Move* selected = current;
+        ++current;
+        return selected;
+    }
+
+};
+
+} // namespace anonymous
+
 // Main search recursive function
 // Uses a negamax framework 
 // score = -negamax(-b, -a)
@@ -60,14 +131,16 @@ Score negamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score bet
     // to be able to restore it
     StoredGameState gs(pos);
 
-    MoveList list;
-    pos.generate_moves(list);
+    MovePick moves(pos);
 
     Color moving_color = pos.get_side();
     Score best_score = -INF_CP;
 
     int legal_moves = 0;
-    for (Move move: list) {
+    Move* move_ptr;
+    while (move_ptr = moves.next()) {
+
+        Move move = *move_ptr;
         pos.make_move(move);
 
         if (pos.is_in_check(moving_color)) {
@@ -133,6 +206,8 @@ Score qnegamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score be
 
     Color moving_color = pos.get_side();
 
+    bool in_check = pos.is_in_check(pos.get_side());
+
     for (Move* p = list.begin(); p != list.end(); ++p) {
         Move move = *p;
 
@@ -140,6 +215,23 @@ Score qnegamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score be
         bool is_noisy = pos.piece_on(dest(move)) != NO_PIECE || flag(move) >= EN_PASSANT;
 
         if (!is_noisy) continue;
+
+        MoveFlag flag_ = flag(move);
+
+        Piece attacker = pos.piece_on(from(move));
+        Piece victim = flag_ == EN_PASSANT ? make_piece(PAWN, opposite(color_of(attacker))) : pos.piece_on(dest(move));
+        
+        Score gain = 0;
+
+        if (victim != NO_PIECE) {
+            gain += MG_VALUES[type_of(victim)];
+        } if (attacker != NO_PIECE) {
+            gain -= MG_VALUES[type_of(attacker)];
+        } if (flag_ >= NPROMO) {
+            gain += PROMO_SCORE_BONUS[flag_ - NPROMO];
+        }
+
+        if (!in_check && gain + stand_pat + DELTA_MARGIN < alpha) continue;
 
         pos.make_move(move);
 
@@ -168,25 +260,15 @@ Score qnegamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score be
 // Root search negamax function, this is the function called
 // upon recieving the "go" UCI command
 void search(Position& pos, int depth_max, int movetime) {
+    
     StoredGameState gs(pos);
-    MoveList list;
-    pos.generate_moves(list);
+    
 
     Color moving_color = pos.get_side();
 
     Score prev_score = 0;
     Move  prev_move  = 0;
 
-    // Keep a legal fallback move in case we time out before finishing depth 1.
-    for (Move move : list) {
-        pos.make_move(move);
-        if (!pos.is_in_check(moving_color)) {
-            prev_move = move;
-            pos.undo_move(move, gs);
-            break;
-        }
-        pos.undo_move(move, gs);
-    }
 
     // Set timing information
     start = steady_clock::now();
@@ -202,8 +284,11 @@ void search(Position& pos, int depth_max, int movetime) {
         Score best_score = -INF_CP;
         Move best_move = 0;
 
+        MovePick list(pos);
+
         int legal_moves = 0;
-        for (Move* p = list.begin(); p != list.end(); ++p) {
+        Move* p;
+        while (p = list.next()) {
 
             int alpha = -INF_CP;
             int beta  = INF_CP;
@@ -267,7 +352,6 @@ void search(Position& pos, int depth_max, int movetime) {
     }
 
     std::cout << "bestmove " << algebraic(prev_move) << std::endl;
-    UCI::info_string("search stopped");
 }
 
 // =========================== Perft ===========================

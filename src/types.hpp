@@ -67,6 +67,7 @@ inline PieceType type_of(Piece p) { return PieceType(p % 6); }
 inline Color     color_of(Piece p) { return Color(p / 6); }
 
 inline Color operator!(Color& c) { return c == WHITE ? BLACK: WHITE; }
+inline Color opposite(Color c) { return c == WHITE ? BLACK: WHITE; }
 inline PieceType operator++(PieceType& pt) { return pt = PieceType(pt + 1); }
 inline PieceType operator++(PieceType& pt, int) { PieceType old = pt; ++pt; return old; }
 

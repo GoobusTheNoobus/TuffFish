@@ -6,7 +6,7 @@
 
 namespace TuffFish {
 
-// =========================== Piece Values ===========================
+// =========================== Evaluation Constants ===========================
 
 // These are some very tuned precise accurate piece values:
 // Source: my ah
@@ -156,6 +156,7 @@ constexpr Score PSQT_EG[PT_NB][SQUARE_NB] = {
 
     },
 };
+
 } // namespace anonymous
 
 inline Score PSQT_VALUE_MG[PT_NB][SQUARE_NB];
