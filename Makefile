@@ -9,7 +9,7 @@ SRC = $(wildcard src/*.cpp)
 OBJ = $(SRC:.cpp=.o)
 DEP = $(OBJ:.o=.d)
 
-TARGET = tufffish_test
+TARGET = tufffish
 
 -include $(DEP)
 

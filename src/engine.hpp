@@ -20,4 +20,4 @@ namespace TuffFish {
     void request_stop();
 
     
-}
+} // namespace TuffFish

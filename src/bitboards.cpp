@@ -1,6 +1,12 @@
 #include "bitboards.hpp"
 
-#include <intrin.h>
+#if defined(__BMI2__)
+  #if defined(_MSC_VER)
+    #include <intrin.h>
+  #else
+    #include <immintrin.h>
+  #endif
+#endif
 
 namespace TuffFish {
 namespace Bitboards {
@@ -8,6 +14,7 @@ namespace {
 
 // =========================== Constant Attack Tables ===========================
 
+// Knight attacks for each square on the chessboard
 constexpr Bitboard KNIGHT_ATTACKS[SQUARE_NB] = {
     0x0000000000020400ULL, 0x0000000000050800ULL, 0x00000000000A1100ULL, 0x0000000000142200ULL,
     0x0000000000284400ULL, 0x0000000000508800ULL, 0x0000000000A01000ULL, 0x0000000000402000ULL,
@@ -27,6 +34,7 @@ constexpr Bitboard KNIGHT_ATTACKS[SQUARE_NB] = {
     0x0044280000000000ULL, 0x0088500000000000ULL, 0x0010A00000000000ULL, 0x0020400000000000ULL,
 };
 
+// King attacks for each square on the chessboard
 constexpr Bitboard KING_ATTACKS[SQUARE_NB] = {
     0x0000000000000302ULL, 0x0000000000000705ULL, 0x0000000000000E0AULL, 0x0000000000001C14ULL,
     0x0000000000003828ULL, 0x0000000000007050ULL, 0x000000000000E0A0ULL, 0x000000000000C040ULL,
@@ -46,6 +54,8 @@ constexpr Bitboard KING_ATTACKS[SQUARE_NB] = {
     0x2838000000000000ULL, 0x5070000000000000ULL, 0xA0E0000000000000ULL, 0x40C0000000000000ULL,
 };
 
+// Pawn attacks for each square on the chessboard
+// Pawns aren't colour-agnostic, therefore we need 2 tables
 constexpr Bitboard PAWN_ATTACKS[COLOR_NB][SQUARE_NB] = {
     {
     0x0000000000000200ULL, 0x0000000000000500ULL, 0x0000000000000A00ULL, 0x0000000000001400ULL,
@@ -87,6 +97,9 @@ constexpr Bitboard PAWN_ATTACKS[COLOR_NB][SQUARE_NB] = {
 
 // =========================== Constant Slider Masks & Magic Numbers ===========================
 
+// Bishop blocker masks for each square on a chessboard
+// The set bits are all the squares which a piece can be on to block a
+// bishop's attack ray
 constexpr Bitboard BISHOP_MASKS[SQUARE_NB] = {
     0x0040201008040200ULL, 0x0000402010080400ULL, 0x0000004020100A00ULL, 0x0000000040221400ULL,
     0x0000000002442800ULL, 0x0000000204085000ULL, 0x0000020408102000ULL, 0x0002040810204000ULL,
@@ -106,6 +119,9 @@ constexpr Bitboard BISHOP_MASKS[SQUARE_NB] = {
     0x0028440200000000ULL, 0x0050080402000000ULL, 0x0020100804020000ULL, 0x0040201008040200ULL,
 };
 
+// Rook blocker masks for each square on a chessboard
+// The set bits are all the squares which a piece can be on to block a
+// rook's attack ray
 constexpr Bitboard ROOK_MASKS[SQUARE_NB] = {
     0x000101010101017EULL, 0x000202020202027CULL, 0x000404040404047AULL, 0x0008080808080876ULL,
     0x001010101010106EULL, 0x002020202020205EULL, 0x004040404040403EULL, 0x008080808080807EULL,
@@ -125,6 +141,8 @@ constexpr Bitboard ROOK_MASKS[SQUARE_NB] = {
     0x6E10101010101000ULL, 0x5E20202020202000ULL, 0x3E40404040404000ULL, 0x7E80808080808000ULL,
 };
 
+// Bishop Magic Numbers used for magic hashing
+// Only a back up if the CPU doesn't support PEXT
 constexpr Bitboard BISHOP_MAGICS[SQUARE_NB] = {
     0x89A1121896040240ULL, 0x2004844802002010ULL, 0x2068080051921000ULL, 0x62880A0220200808ULL,
     0x0004042004000000ULL, 0x0100822020200011ULL, 0xC00444222012000AULL, 0x0028808801216001ULL,
@@ -144,6 +162,8 @@ constexpr Bitboard BISHOP_MAGICS[SQUARE_NB] = {
     0x0001000042304105ULL, 0x0010008830412A00ULL, 0x2520081090008908ULL, 0x40102000A0A60140ULL,
 };
 
+// Rook Magic Numbers used for magic hashing
+// Again, only a back up if the CPU doesn't support PEXT
 constexpr Bitboard ROOK_MAGICS[SQUARE_NB] = {
     0x0A8002C000108020ULL, 0x06C00049B0002001ULL, 0x0100200010090040ULL, 0x2480041000800801ULL,
     0x0280028004000800ULL, 0x0900410008040022ULL, 0x0280020001001080ULL, 0x2880002041000080ULL,
@@ -163,6 +183,7 @@ constexpr Bitboard ROOK_MAGICS[SQUARE_NB] = {
     0x489A000810200402ULL, 0x0001004400080A13ULL, 0x4000011008020084ULL, 0x0026002114058042ULL,
 };
 
+// Equivalent to the popcount of the bishop masks
 constexpr int BISHOP_RELEVANCIES[SQUARE_NB] = {
     6, 5, 5, 5, 5, 5, 5, 6,
     5, 5, 5, 5, 5, 5, 5, 5,
@@ -174,6 +195,7 @@ constexpr int BISHOP_RELEVANCIES[SQUARE_NB] = {
     6, 5, 5, 5, 5, 5, 5, 6,
 };
 
+// Equivalent to the popcount of the rook masks
 constexpr int ROOK_RELEVANCIES[SQUARE_NB] = {
     12, 11, 11, 11, 11, 11, 11, 12,
     11, 10, 10, 10, 10, 10, 10, 11,
@@ -185,6 +207,10 @@ constexpr int ROOK_RELEVANCIES[SQUARE_NB] = {
     12, 11, 11, 11, 11, 11, 11, 12,
 };
 
+// Since 2d arrays in C++ cannot contain subarrays of different
+// lengths, we reduce the entire thing to 1 flat array 
+
+// Bishop attack table index offsets
 constexpr int BISHOP_OFFSETS[64] = {
        0,   64,   96,  128,  160,  192,  224,  256,
      320,  352,  384,  416,  448,  480,  512,  544,
@@ -196,6 +222,7 @@ constexpr int BISHOP_OFFSETS[64] = {
     4928, 4992, 5024, 5056, 5088, 5120, 5152, 5184,
 };
 
+// Rook attack table index offsets
 constexpr int ROOK_OFFSETS[64] = {
         0,  4096,  6144,  8192, 10240, 12288, 14336, 16384,
     20480, 22528, 23552, 24576, 25600, 26624, 27648, 28672,
@@ -209,17 +236,22 @@ constexpr int ROOK_OFFSETS[64] = {
 
 // =========================== Magic Slider Implementation ===========================
 
+// Main attack tables for the sliders
 constexpr int BISHOP_SIZE = 5248;
 constexpr int ROOK_SIZE = 102400;
 
 Bitboard BISHOP_ATTACKS[BISHOP_SIZE];
 Bitboard ROOK_ATTACKS[ROOK_SIZE];
 
+// Direction deltas
 std::pair<int, int>
 bishop_vectors[4] = {{1, 1}, {1, -1}, {-1, 1}, {-1, -1}}, 
 rook_vectors[4] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 
-bool out_of_bounds(int x, int y) { return x > 7 || x < 0 || y > 7 || y < 0; }
+inline bool out_of_bounds(int x, int y) { return x > 7 || x < 0 || y > 7 || y < 0; }
+
+// Slow raycasting done once at startup for every single 
+// blocker combination so lookups can be very fast
 
 Bitboard raycast_bishop(Square square, Bitboard blockers) {
     Bitboard mask = 0;
@@ -242,7 +274,6 @@ Bitboard raycast_bishop(Square square, Bitboard blockers) {
                 break;
         }
     }
-
     return mask;
 }
 
@@ -287,6 +318,8 @@ int hash_rook(Square square, Bitboard blockers) {
     #endif
 }
 
+// Used to generate 1 blocker set for every index based
+// on the blocker mask
 Bitboard generate_blocker(int index, Bitboard mask) {
     Bitboard blocker = 0;
     int bitnum = 0;
@@ -301,7 +334,7 @@ Bitboard generate_blocker(int index, Bitboard mask) {
     return blocker;
 }
 
-}
+} // namespace anonymous
 
 void initialize() {
     #ifdef __BMI2__ 
@@ -335,4 +368,4 @@ Bitboard queen_attack(Square square, Bitboard occ) { return bishop_attack(square
 
 } // namespace Bitboards
 
-} // namespace TuffChess
+} // namespace TuffFish

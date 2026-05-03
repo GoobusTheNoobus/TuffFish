@@ -9,24 +9,23 @@ using namespace std::chrono;
 namespace TuffFish {
     
 // =========================== Timing & Search control ===========================
+
 namespace {
 
+// Used for search timing
 steady_clock::time_point start;
+// Measured in ms
 int time_limit;
+// Stop flag, when active, search will exit as soon as possible
 std::atomic_bool stop_;
 
-bool should_stop() {
-    if (stop_.load()) return true;
-
-    if (time_limit > 0 && duration_cast<milliseconds>(steady_clock::now() - start).count() > time_limit) return true;
-
-    return false;
-}
+inline bool should_stop() {
+    return stop_.load() || (time_limit > 0 && duration_cast<milliseconds>(steady_clock::now() - start).count() > time_limit);
 }
 
-void request_stop() {
-    stop_.store(true);
-}
+} // namespace anonymous
+
+void request_stop() { stop_.store(true); }
 
 // =========================== Search Settings ===========================
 // Barely any
@@ -34,94 +33,31 @@ constexpr int QS_MAX_DEPTH        = 32;
 constexpr bool USE_QSEARCH        = true;
 constexpr int DELTA_MARGIN        = MG_VALUES[PAWN] * 2;
 
-// =========================== Perft ===========================
-
-int perft(Position& pos, int depth) {
-    if (depth <= 0) {
-        return 1;
-    }
-
-    StoredGameState gs(pos);
-
-    MoveList list;
-    pos.generate_moves(list);
-
-    Color moving_color = pos.get_side();
-
-    int nodes = 0;
-
-    for (Move move: list) {
-        pos.make_move(move);
-
-        if (pos.is_in_check(moving_color)) {
-            pos.undo_move(move, gs);
-            continue;
-        }
-
-        nodes += perft(pos, depth - 1);
-
-        pos.undo_move(move, gs);
-    }
-
-    return nodes;
-}
-
-void perft_divide(Position& pos, int depth) {
-    StoredGameState gs(pos);
-
-    MoveList list;
-    pos.generate_moves(list);
-
-    Color moving_color = pos.get_side();
-
-    uint64_t total = 0;
-
-    auto start = steady_clock::now();
-
-    for (Move move: list) {
-        pos.make_move(move);
-
-        if (pos.is_in_check(moving_color)) {
-            pos.undo_move(move, gs);
-            continue;
-        }
-
-        int nodes = perft(pos, depth - 1);
-
-        total += nodes;
-
-        std::cout << algebraic(move) << ": " << nodes << std::endl;
-
-        pos.undo_move(move, gs);
-    }
-    auto end = steady_clock::now();
-
-    std::cout << "Total Nodes: " << total << std::endl;
-    std::cout << "Nodes Per Second: " << (uint64_t)(total / duration_cast<milliseconds>(end - start).count() * 1000) << std::endl;
-}
-
 // =========================== Engine & Search Implementation ===========================
 
+// Main search recursive function
+// Uses a negamax framework 
+// score = -negamax(-b, -a)
 Score negamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score beta) {
     info.nodes++;
-    info.plies_from_root++;
-
-    if (should_stop())  {
-        info.plies_from_root--;
+    
+    if (should_stop())
         return TIMEOUT_CP;
-    }
-        
+    
+    info.plies_from_root++;
     
     if (depth == 0) {
         info.plies_from_root--;
         if constexpr (USE_QSEARCH) {
+            // Queiscence search to avoid horizon effect
             return qnegamax(info, pos, QS_MAX_DEPTH, alpha, beta);
         } else {
-            return pos.psqt_eval();
+            return pos.evaluate();
         }
-
-        
     }
+
+    // We store the game infos of this position before modifying
+    // to be able to restore it
     StoredGameState gs(pos);
 
     MoveList list;
@@ -131,8 +67,7 @@ Score negamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score bet
     Score best_score = -INF_CP;
 
     int legal_moves = 0;
-    for (Move* p = list.begin(); p != list.end(); ++p) {
-        Move move = *p;
+    for (Move move: list) {
         pos.make_move(move);
 
         if (pos.is_in_check(moving_color)) {
@@ -155,11 +90,8 @@ Score negamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score bet
             info.plies_from_root--;
             return TIMEOUT_CP;
         }
-            
 
-        if (score > best_score) 
-            best_score = score;
-        
+        best_score = std::max(score, best_score);
         alpha = std::max(alpha, score);
 
         if (alpha >= beta) 
@@ -168,11 +100,8 @@ Score negamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score bet
 
     // No legal moves
     if (legal_moves == 0) {
-        
-        if (pos.is_in_check(moving_color)) {
+        if (pos.is_in_check(moving_color)) 
             return -(MATE_CP - info.plies_from_root--);
-        }
-
         info.plies_from_root--;
         return DRAW_CP;
     }
@@ -184,11 +113,11 @@ Score negamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score bet
 Score qnegamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score beta) {
     info.nodes++;
 
-    if (depth == 0) return pos.psqt_eval();
+    if (depth == 0) return pos.evaluate();
 
     info.plies_from_root++;
 
-    Score stand_pat = pos.psqt_eval();
+    Score stand_pat = pos.evaluate();
 
     if (stand_pat >= beta) {
         info.plies_from_root--;
@@ -207,6 +136,7 @@ Score qnegamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score be
     for (Move* p = list.begin(); p != list.end(); ++p) {
         Move move = *p;
 
+        // Only search noisy moves
         bool is_noisy = pos.piece_on(dest(move)) != NO_PIECE || flag(move) >= EN_PASSANT;
 
         if (!is_noisy) continue;
@@ -235,10 +165,9 @@ Score qnegamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score be
     return alpha;
 }
 
+// Root search negamax function, this is the function called
+// upon recieving the "go" UCI command
 void search(Position& pos, int depth_max, int movetime) {
-    UCI::info_string("starting search with hce eval");
-    UCI::info_string("depth = " + std::to_string(depth_max));
-    UCI::info_string(" time = " + std::to_string(movetime) + "ms");
     StoredGameState gs(pos);
     MoveList list;
     pos.generate_moves(list);
@@ -305,6 +234,7 @@ void search(Position& pos, int depth_max, int movetime) {
             ++legal_moves;
         }
 
+        // No legal moves
         if (depth == 1) {
             if (legal_moves == 0) {
                 UCI::info_string(pos.is_in_check(moving_color)
@@ -339,4 +269,69 @@ void search(Position& pos, int depth_max, int movetime) {
     std::cout << "bestmove " << algebraic(prev_move) << std::endl;
     UCI::info_string("search stopped");
 }
+
+// =========================== Perft ===========================
+
+int perft(Position& pos, int depth) {
+    if (depth <= 0) 
+        return 1;
+    
+    StoredGameState gs(pos);
+
+    MoveList list;
+    pos.generate_moves(list);
+
+    Color moving_color = pos.get_side();
+
+    int nodes = 0;
+
+    for (Move move: list) {
+        pos.make_move(move);
+
+        if (pos.is_in_check(moving_color)) {
+            pos.undo_move(move, gs);
+            continue;
+        }
+
+        nodes += perft(pos, depth - 1);
+
+        pos.undo_move(move, gs);
+    }
+
+    return nodes;
 }
+
+void perft_divide(Position& pos, int depth) {
+    StoredGameState gs(pos);
+
+    MoveList list;
+    pos.generate_moves(list);
+
+    Color moving_color = pos.get_side();
+
+    uint64_t total = 0;
+
+    auto start = steady_clock::now();
+
+    for (Move move: list) {
+        pos.make_move(move);
+
+        if (pos.is_in_check(moving_color)) {
+            pos.undo_move(move, gs);
+            continue;
+        }
+
+        int nodes = perft(pos, depth - 1);
+
+        total += nodes;
+
+        std::cout << algebraic(move) << ": " << nodes << std::endl;
+
+        pos.undo_move(move, gs);
+    }
+    auto end = steady_clock::now();
+
+    std::cout << "Total Nodes: " << total << std::endl;
+    std::cout << "Nodes Per Second: " << (uint64_t)(total / duration_cast<milliseconds>(end - start).count() * 1000) << std::endl;
+}
+} // namespace TuffFish

@@ -58,4 +58,4 @@ Bitboard queen_attack(Square square, Bitboard occ);
 void initialize();
 
 } // namespace Bitboards
-} // namespace TuffChess
+} // namespace TuffFish

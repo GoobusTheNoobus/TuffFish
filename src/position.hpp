@@ -6,7 +6,8 @@ namespace TuffFish {
 
 struct StoredGameState;
 
-inline constexpr const char* const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";   
+inline constexpr const char* const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";  
+
 
 class Position {
     public:
@@ -34,7 +35,7 @@ class Position {
     inline Square get_ep_square() const { return en_passant_square; }
     inline uint8_t get_rule_50() const { return rule_50; }
 
-    Score psqt_eval() const;
+    Score evaluate() const;
 
     void generate_moves(MoveList& moves) const;
 
