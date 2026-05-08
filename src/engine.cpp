@@ -1,4 +1,5 @@
 #include "engine.hpp"
+#include "tt.hpp"
 #include "uci.hpp"
 
 #include <atomic>
@@ -33,12 +34,27 @@ constexpr int QS_MAX_DEPTH        = 32;
 constexpr bool USE_QSEARCH        = true;
 constexpr int DELTA_MARGIN        = MG_VALUES[PAWN] * 2;
 
+inline Score score_to_tt(Score score, int plies_from_root) {
+    if (score >= MAX_CP) return score + plies_from_root;
+    if (score <= -MAX_CP) return score - plies_from_root;
+    return score;
+}
+
+inline Score score_from_tt(Score score, int plies_from_root) {
+    if (score >= MAX_CP) return score - plies_from_root;
+    if (score <= -MAX_CP) return score + plies_from_root;
+    return score;
+}
+
 // =========================== Engine & Search Implementation ===========================
 
 namespace {
 
 using ScoreList = std::array<int, 256>;
 
+// The bonus for promoting a piece
+// You trade a pawn for whatever piece you promote to, ergo
+// the following values
 static constexpr Score PROMO_SCORE_BONUS[] = {
     KNIGHT_VALUE_MG - PAWN_VALUE_MG,
     BISHOP_VALUE_MG - PAWN_VALUE_MG,
@@ -47,14 +63,20 @@ static constexpr Score PROMO_SCORE_BONUS[] = {
 };
 
 // Stockfish does this btw
+// Instead of a raw move list and looping thru every single move,
+// we have a container with a list of "scores" based on how GOOD the 
+// move looks. For example, a capture is more appealing than a normal 
+// move. By trying the most promising moves first, we can cause more 
+// cutoffs
 struct MovePick {
     MoveList  list;
     ScoreList scores;
     Move*     current;
 
-    
+    // Score based on how promising it looks
+    int score_move(const Position& pos, Move m, Move tt_move) {
+        if (tt_move != 0 && m == tt_move) return 2'000'000;
 
-    int score_move(const Position& pos, Move m) {
         Piece captured = pos.piece_on(dest(m));
         Piece moved    = pos.piece_on(from(m));
         MoveFlag flag_ = flag(m);
@@ -70,7 +92,7 @@ struct MovePick {
         return 0;
     }
 
-    MovePick(const Position& pos) {
+    MovePick(const Position& pos, Move tt_move = 0) {
         current = list.begin();
   
         pos.generate_moves(list);
@@ -78,7 +100,7 @@ struct MovePick {
         for (int i = 0; i < list.size(); ++i) {
             Move m = list[i];
 
-            scores[i] = score_move(pos, m);
+            scores[i] = score_move(pos, m, tt_move);
         }
 
     }
@@ -110,6 +132,8 @@ struct MovePick {
 // Uses a negamax framework 
 // score = -negamax(-b, -a)
 Score negamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score beta) {
+    if (pos.is_repetition()) return DRAW_CP;
+
     info.nodes++;
     
     if (should_stop())
@@ -126,19 +150,60 @@ Score negamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score bet
             return pos.evaluate();
         }
     }
+    
+    // TT probe (before generating moves)
+    // 
+    // We first check whether this exact position was already searched.
+    // 
+    // If stored depth is deep enough:
+    // - EXACT: return immediately (no need to search pos again)
+    // - LOWER: raise alpha (position is at least this good)
+    // - UPPER: lower beta  (position is at most this good)
+
+    // If alpha >= beta after applying bounds, this node is resolved and we can
+    // cut off without exploring moves.
+    
+    const Score alpha_orig = alpha;
+    const Score beta_orig = beta;
+    // Used for transposition tables
+    const HashKey key = pos.zobrist();
+    Move tt_move = 0;
+
+    if (HashEntry* entry = TranspositionTable::get(key)) {
+        tt_move = entry->best_move;
+        if (entry->depth >= depth) {
+            Score tt_score = score_from_tt(entry->score, info.plies_from_root);
+
+            if (entry->flag == VALUE_EXACT) {
+                info.plies_from_root--;
+                return tt_score;
+            }
+            if (entry->flag == VALUE_LOWER) {
+                alpha = std::max(alpha, tt_score);
+            } else if (entry->flag == VALUE_UPPER) {
+                beta = std::min(beta, tt_score);
+            }
+
+            if (alpha >= beta) {
+                info.plies_from_root--;
+                return entry->flag == VALUE_LOWER ? alpha : beta;
+            }
+        }
+    }
 
     // We store the game infos of this position before modifying
     // to be able to restore it
     StoredGameState gs(pos);
 
-    MovePick moves(pos);
+    MovePick moves(pos, tt_move);
 
     Color moving_color = pos.get_side();
     Score best_score = -INF_CP;
+    Move best_move = 0;
 
     int legal_moves = 0;
     Move* move_ptr;
-    while (move_ptr = moves.next()) {
+    while ((move_ptr = moves.next())) {
 
         Move move = *move_ptr;
         pos.make_move(move);
@@ -164,7 +229,10 @@ Score negamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score bet
             return TIMEOUT_CP;
         }
 
-        best_score = std::max(score, best_score);
+        if (score > best_score) {
+            best_score = score;
+            best_move = move;
+        }
         alpha = std::max(alpha, score);
 
         if (alpha >= beta) 
@@ -173,11 +241,29 @@ Score negamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score bet
 
     // No legal moves
     if (legal_moves == 0) {
-        if (pos.is_in_check(moving_color)) 
-            return -(MATE_CP - info.plies_from_root--);
+        Score terminal_score = DRAW_CP;
+        if (pos.is_in_check(moving_color))
+            terminal_score = -(MATE_CP - info.plies_from_root);
+
+        TranspositionTable::put(key, score_to_tt(terminal_score, info.plies_from_root), 0, depth, VALUE_EXACT);
+
         info.plies_from_root--;
-        return DRAW_CP;
+        return terminal_score;
     }
+
+    
+    // TT store
+    // We store what this node proved;
+    // - VALUE_UPPER: score <= original_alpha
+    // - VALUE_LOWER: score >= original_beta
+    // - VALUE_EXACT: original_alpha < score < beta
+
+    TTFlag flag = VALUE_EXACT;
+
+    if (best_score <= alpha_orig) flag = VALUE_UPPER;
+    else if (best_score >= beta_orig) flag = VALUE_LOWER;
+
+    TranspositionTable::put(key, score_to_tt(best_score, info.plies_from_root), best_move, depth, flag);
     
     info.plies_from_root--;
     return best_score;
@@ -263,12 +349,10 @@ void search(Position& pos, int depth_max, int movetime) {
     
     StoredGameState gs(pos);
     
-
     Color moving_color = pos.get_side();
 
     Score prev_score = 0;
     Move  prev_move  = 0;
-
 
     // Set timing information
     start = steady_clock::now();
@@ -277,22 +361,27 @@ void search(Position& pos, int depth_max, int movetime) {
 
     SearchInfo info;
 
+    // Iterative Deepening container for DFS search
     int depth;
     for (depth = 1; depth <= depth_max; ++depth) {
         if (should_stop()) break;
 
+        std::vector<std::pair<Move, Score>> map;
+
         Score best_score = -INF_CP;
         Move best_move = 0;
 
-        MovePick list(pos);
+        Move root_tt_move = 0;
+        if (HashEntry* entry = TranspositionTable::get(pos.zobrist()))
+            root_tt_move = entry->best_move;
+
+        MovePick list(pos, root_tt_move);
+        const Score alpha = -INF_CP;
+        const Score beta  = INF_CP;
 
         int legal_moves = 0;
         Move* p;
-        while (p = list.next()) {
-
-            int alpha = -INF_CP;
-            int beta  = INF_CP;
-
+        while ((p = list.next())) {
             Move move = *p;
             pos.make_move(move);
 
@@ -302,6 +391,7 @@ void search(Position& pos, int depth_max, int movetime) {
             }  
             Score score = -negamax(info, pos, depth - 1, -beta, -alpha);
             // std::cout << "Move: " << algebraic(move) << ", Score " << score << std::endl;
+            map.push_back(std::pair{move, score});
 
             pos.undo_move(move, gs);
 
@@ -316,6 +406,7 @@ void search(Position& pos, int depth_max, int movetime) {
                 best_move = move;
                 best_score = score;
             }
+            
             ++legal_moves;
         }
 
@@ -341,6 +432,9 @@ void search(Position& pos, int depth_max, int movetime) {
         pv.add(prev_move);
 
         UCI::info_depth(depth, prev_score, info.nodes, duration_cast<milliseconds>(steady_clock::now() - start).count(), pv);
+        /*for (auto pair: map) {
+            UCI::info_string(algebraic(pair.first) + ": " + std::to_string(pair.second));
+        }*/
         
         
     }
@@ -355,6 +449,9 @@ void search(Position& pos, int depth_max, int movetime) {
 }
 
 // =========================== Perft ===========================
+// Used to determine the number of nodes in a certain position to 
+// a certain depth. Good for verifying that the engine's move 
+// generation is correct
 
 int perft(Position& pos, int depth) {
     if (depth <= 0) 

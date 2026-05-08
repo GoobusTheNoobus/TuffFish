@@ -1,9 +1,12 @@
 #include "bitboards.hpp"
 
+// Different operating systems use different file names
 #if defined(__BMI2__)
   #if defined(_MSC_VER)
+    // Windows (which I use)
     #include <intrin.h>
   #else
+    // Mac and Linux
     #include <immintrin.h>
   #endif
 #endif
@@ -12,7 +15,18 @@ namespace TuffFish {
 namespace Bitboards {
 namespace {
 
-// =========================== Constant Attack Tables ===========================
+// The namespace includes a bunch of logic and tables that precomputes piece
+// attacks at startup. This way, during search, attackgen would be O(1), which 
+// is miles faster than calculating the piece's attacks during search
+
+// =========================== Leaper Attack Tables ===========================
+
+// Leapers attack tables (Knights/Pawns/Kings) 
+// 
+// Leapers are pieces with attacks that cannot be blocked by other 
+// pieces on the chessboard. Therefore, we don't have to consider other 
+// factors on the board, and we can "precompute" one bitboard for each square,
+// except for pawns, which attack based on their colour. 
 
 // Knight attacks for each square on the chessboard
 constexpr Bitboard KNIGHT_ATTACKS[SQUARE_NB] = {
@@ -96,6 +110,24 @@ constexpr Bitboard PAWN_ATTACKS[COLOR_NB][SQUARE_NB] = {
 };
 
 // =========================== Constant Slider Masks & Magic Numbers ===========================
+
+// Slider attack tables (bishop/rook/queen)
+//
+// Sliders, unlike leapers, have attacks that can be affected by other 
+// pieces. Therefore, an approach like the leapers wouldn't work, since
+// the attack is a "ray" that cannot pass through a piece
+//
+// To solve this, we have a bishop and rook table (queen attack can be gotten
+// by combining), where we index by [square][blocker_hash]. However, because
+// C++ is DUMB >:C, for cache efficiency, we combine every sub-table into a 
+// giant flat table, which saves memory
+// 
+// Blocker hash is calculated by the hash function, which uses the CPU's PEXT
+// instructions to hash blocker combination into a packed index in one instruction.
+// For CPUs that do not support PEXT, we use a magic bitboard approach. I'm too lazy
+// to explain in the code itself, so heres the chessprogramming wiki explanation
+// https://www.chessprogramming.org/Magic_Bitboards 
+
 
 // Bishop blocker masks for each square on a chessboard
 // The set bits are all the squares which a piece can be on to block a
@@ -235,6 +267,8 @@ constexpr int ROOK_OFFSETS[64] = {
 };
 
 // =========================== Magic Slider Implementation ===========================
+// Includes the slow "raycast" method I talked about, but done only ONCE
+// at startup before generating any slider related moves.
 
 // Main attack tables for the sliders
 constexpr int BISHOP_SIZE = 5248;
@@ -302,6 +336,10 @@ Bitboard raycast_rook(Square square, Bitboard blockers) {
     return mask;
 }
 
+// These are the hash functions I was talking about
+// When compiling the code, the compiler knows what the CPU supports,
+// and decides to either use PEXT or magic depending on the CPU
+
 int hash_bishop(Square square, Bitboard blockers) {
     #ifdef __BMI2__ 
         return _pext_u64(blockers, BISHOP_MASKS[square]);
@@ -318,8 +356,12 @@ int hash_rook(Square square, Bitboard blockers) {
     #endif
 }
 
-// Used to generate 1 blocker set for every index based
-// on the blocker mask
+
+// Given an integer index [0 .. 2^relevant_bits), build the corresponding
+// blocker bitboard for that square's mask.
+// 
+// This is used only during startup table generation.
+
 Bitboard generate_blocker(int index, Bitboard mask) {
     Bitboard blocker = 0;
     int bitnum = 0;
@@ -342,6 +384,17 @@ void initialize() {
     #else
         #pragma message("BMI2 not supported")
     #endif
+    
+    // Startup precomputation
+    //
+    // We fill bishop and rook attack tables by brute-force raycasting every
+    // relevant blocker layout for every square.
+    // 
+    // After this finishes, runtime lookup functions near the bottom of the file
+    // are just array indexing + hash, with no ray traversal.
+    // Huge speed hack, allowing movegen to take less than 10ns per call, but only
+    // if optmized by sweats on the internet who don't have real jobs (im unemployed btw)
+    
     for (Square square = A1; square < SQUARE_NB; ++square) {
         for (int i = 0; i < int(SQUARE_BB[BISHOP_RELEVANCIES[square]]); ++i) {
             Bitboard blockers = generate_blocker(i, BISHOP_MASKS[square]);
@@ -357,6 +410,7 @@ void initialize() {
 }
 
 // =========================== Bitboard Lookups ===========================
+// It is exactly what it sounds like
 
 Bitboard knight_attack(Square square) { return KNIGHT_ATTACKS[square]; }
 Bitboard king_attack(Square square) { return KING_ATTACKS[square]; }

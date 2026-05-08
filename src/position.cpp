@@ -3,15 +3,49 @@
 #include "evaluate.hpp"
 
 #include <sstream>
+#include <random>
 
 namespace TuffFish {
+
+// =========================== Zobrist Hashing Impl ===========================
+
+namespace Zobrist {
+    namespace {
+    HashKey PIECE_SQUARE_KEYS[PIECE_NB][SQUARE_NB];
+    HashKey SIDE_MOVING_KEY;
+    HashKey CASTLING_KEYS[CASTLING_RIGHTS_NB];
+    HashKey EN_PASSANT_KEYS[FILE_NB];
+    }
+
+    void initialize() {
+        std::mt19937_64 rng(0x9e3779b97f4a7c15ULL);
+        auto r64 = [&]() { return rng(); };
+
+        for (int p = 0; p < PIECE_NB; ++p)
+            for (int s = 0; s < SQUARE_NB; ++s)
+                PIECE_SQUARE_KEYS[p][s] = r64();
+
+        SIDE_MOVING_KEY = r64();
+
+        for (int c = 0; c < CASTLING_RIGHTS_NB; ++c) CASTLING_KEYS[c] = r64();
+        for (int f = 0; f < FILE_NB; ++f) EN_PASSANT_KEYS[f] = r64();
+    }
+
+    HashKey ps_key(Piece p, Square squ) { return PIECE_SQUARE_KEYS[p][squ]; }
+    HashKey side_key() { return SIDE_MOVING_KEY; }
+    HashKey castling_key(CastlingRight r) { return CASTLING_KEYS[r]; }
+    HashKey ep_key(Square squ) { return squ != NO_SQUARE ? EN_PASSANT_KEYS[file_of(squ)]: 0; }
+
+    
+    
+} // namespace Zobrist
 
 
 inline constexpr const std::string_view piece_chars("PNBRQKpnbrqk ");
 
 // =========================== Constructors ===========================
 
-Position::Position() { parse_fen(START_FEN); }
+
 Position::Position(const std::string& fen) { parse_fen(fen); }
 
 // Operator overload used automatically when printing
@@ -32,6 +66,8 @@ std::ostream& operator<<(std::ostream& os, const Position& pos) {
 
     return os;
 }
+
+// =========================== Editting Functions ===========================
 
 void Position::parse_fen(const std::string& fen) {
     std::istringstream iss(fen);
@@ -65,7 +101,10 @@ void Position::parse_fen(const std::string& fen) {
     // Parse side
     if (!(iss >> token)) return;
 
-    if (token == "b") side_to_move = BLACK;
+    if (token == "b") {
+        hash ^= Zobrist::side_key();
+        side_to_move = BLACK;
+    }
 
     // Castling Rights
     if (!(iss >> token)) return;
@@ -91,12 +130,15 @@ void Position::parse_fen(const std::string& fen) {
         }
     }
 
+    hash ^= Zobrist::castling_key(castling);
+
     // En Passant
     if (!(iss >> token)) return;
 
     for (Square squ = A1; squ < SQUARE_NB; ++squ) {
         if (token == square_str[squ]) {
             en_passant_square = squ;
+            hash ^= Zobrist::ep_key(squ);
             break;
         }
     }
@@ -106,6 +148,7 @@ void Position::parse_fen(const std::string& fen) {
 
     rule_50 = std::stoi(token);
 }
+
 
 void Position::clear() {
     std::fill(board.begin(), board.end(), NO_PIECE);
@@ -120,6 +163,7 @@ void Position::clear() {
     mg_psqt_score = 0;
     eg_psqt_score = 0;
     ply = 0;
+    hash = 0;
 }
 
 void Position::clear(Square square) {
@@ -143,6 +187,8 @@ void Position::clear(Square square) {
     eg_psqt_score = color == WHITE ? 
                             (eg_psqt_score - Evaluate::PSQT_VALUE_EG[pt][square ^ 56]): 
                             (eg_psqt_score + Evaluate::PSQT_VALUE_EG[pt][square]);
+
+    hash ^= Zobrist::ps_key(piece, square);
 
 }
 
@@ -168,6 +214,8 @@ void Position::place(Square square, Piece piece) {
     eg_psqt_score = color == WHITE ? 
                             (eg_psqt_score + Evaluate::PSQT_VALUE_EG[pt][square ^ 56]): 
                             (eg_psqt_score - Evaluate::PSQT_VALUE_EG[pt][square]);
+
+    hash ^= Zobrist::ps_key(piece, square);
 }
 
 void Position::make_move(Move move) {
@@ -180,9 +228,14 @@ void Position::make_move(Move move) {
     Piece moving = board[from_squ];
     Piece captured = flag_ == EN_PASSANT ? make_piece(PAWN, !side_to_move): board[dest_squ];
 
+    hash_stack[ply] = hash;
     capture_stack[ply++] = captured;
+    
 
+    if (en_passant_square != NO_SQUARE)
+        hash ^= Zobrist::ep_key(en_passant_square);
     en_passant_square = NO_SQUARE;
+    
 
     clear(from_squ);
 
@@ -214,6 +267,8 @@ void Position::make_move(Move move) {
             place(dest_squ, moving);
 
             en_passant_square = is_white ? (dest_squ + SOUTH): (dest_squ + NORTH);
+            hash ^= Zobrist::ep_key(en_passant_square);
+
 
             break;
         }
@@ -238,6 +293,8 @@ void Position::make_move(Move move) {
     }
 
     // Remove castling rights if moved to rook starting square
+    hash ^= Zobrist::castling_key(castling);
+
     if (from_squ == A1 || dest_squ == A1) {
         castling = CastlingRight(castling & ~WHITE_QS);
     } else if (from_squ == H1 || dest_squ == H1) {
@@ -248,12 +305,16 @@ void Position::make_move(Move move) {
         castling = CastlingRight(castling & ~BLACK_KS);
     }
 
+    
+
     // Remove castling rights if king moved
+    
     if (moving == W_KING) {
         castling = CastlingRight(castling & ~WHITE_CASTLING);
     } else if (moving == B_KING) {
         castling = CastlingRight(castling & ~BLACK_CASTLING);
     }
+    hash ^= Zobrist::castling_key(castling);
 
     if (captured == NO_PIECE && type_of(moving) != PAWN) {
         rule_50++;
@@ -262,7 +323,7 @@ void Position::make_move(Move move) {
     }
 
     side_to_move = !side_to_move;
-
+    hash ^= Zobrist::side_key();
 }
 
 void Position::make_move(const std::string& str) {
@@ -272,7 +333,6 @@ void Position::make_move(const std::string& str) {
     for (Move m: list) {
         if (algebraic(m) == str) {
             make_move(m);
-            ply = 0;
             return;
         }
     }
@@ -281,7 +341,7 @@ void Position::make_move(const std::string& str) {
 void Position::undo_move(Move move, const StoredGameState& gs) {
     side_to_move = !side_to_move;
 
-    bool is_white = side_to_move == WHITE;
+    bool is_white = white_to_move();
 
     Square from_squ = from(move);
     Square dest_squ = dest(move);
@@ -349,20 +409,23 @@ void Position::undo_move(Move move, const StoredGameState& gs) {
         }
     }
 
+    hash = hash_stack[ply];
 }
 
 // =========================== Evaluation Function ===========================
 
 Score Position::evaluate() const {
+
+    // Piece Square Table
     int phase = Evaluate::game_phase(this);
     int mg_phase = phase;
     int eg_phase = 24 - phase;
 
-    Score score = (mg_psqt_score * mg_phase + eg_psqt_score * eg_phase) / 24;
+    Score mg_score = mg_psqt_score + (white_to_move() ? TEMPO_BONUS_MG: -TEMPO_BONUS_MG);
+    Score eg_score = eg_psqt_score + (white_to_move() ? TEMPO_BONUS_EG: -TEMPO_BONUS_EG);
 
-    // Normalize score if eg_phase is low
-    double weight = std::min<double>(std::max<double>(-phase / 60.0 + 1.1, 0.7), 1.2);
-    score = int(weight * score);
+    // Taper between EG and MG score based on game phase
+    Score score = (mg_score * mg_phase + eg_score * eg_phase) / 24;
 
     return side_to_move == WHITE ? score: -score;
 }
@@ -383,7 +446,9 @@ void Position::generate_moves(MoveList& moves) const {
     Color them = !us;
     bool  is_white = us == WHITE;
 
-    Bitboard their_pieces = color_bb[them];
+    // Kings are never capturable in legal chess. Keep pseudo-legal generation
+    // from producing king-capture moves, which can poison search scores.
+    Bitboard their_pieces = color_bb[them] & ~piece_bb[make_piece(KING, them)];
 
     // ============= Pawns ==============
     Bitboard pawns = piece_bb[make_piece(PAWN, us)];
@@ -506,6 +571,7 @@ template <PieceType pt>
 void Position::generate_piece_moves(MoveList& list) const {
     Color us = side_to_move;
     Bitboard our_pieces = color_bb[us];
+    Bitboard their_king = piece_bb[make_piece(KING, !us)];
 
     Bitboard pieces = piece_bb[make_piece(pt, us)];
 
@@ -526,7 +592,7 @@ void Position::generate_piece_moves(MoveList& list) const {
             attacks = Bitboards::king_attack(square);
         }
 
-        attacks &= ~our_pieces;
+        attacks &= ~(our_pieces | their_king);
 
         while (attacks) { 
             Square squ = Square(pop_lsb(attacks));
@@ -559,9 +625,26 @@ bool Position::is_attacked(Square square, Color by) const {
 }
 
 bool Position::is_in_check(Color c) const {
-    return is_attacked(Square(ctz(piece_bb[make_piece(KING, c)])), !c);
+    Bitboard king = piece_bb[make_piece(KING, c)];
+    if (king == 0) return true;
+
+    return is_attacked(Square(ctz(king)), !c);
 }
-    
+
+bool Position::is_repetition() const {
+    int start = std::max(0, ply - rule_50);
+    int count = 1;
+
+    for (int i = ply - 2; i >= start; i -= 2) {
+        if (hash_stack[i] == hash) {
+            count += 1;
+        }
+
+        if (count == 3) return true;
+    }
+    return false;
+}
+
 
 
 } // namespace TuffChess

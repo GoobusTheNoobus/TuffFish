@@ -6,6 +6,7 @@
 using namespace TuffFish;
 
 int main(void) {
+    
     std::cout << "TuffFish Chess Engine made by GoobusTheNoobus\n";
 
     UCI::loop();

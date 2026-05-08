@@ -4,7 +4,17 @@
 
 namespace TuffFish {
 
-struct StoredGameState;
+// Zobrist Hashing
+namespace Zobrist {
+    void initialize();
+
+    HashKey ps_key(Piece p, Square squ);
+    HashKey side_key();
+    HashKey castling_key(CastlingRight r);
+    HashKey ep_key(Square squ);
+
+} // namespace Zobrist
+
 
 inline constexpr const char* const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";  
 
@@ -13,12 +23,15 @@ class Position {
     public:
     // Constructors
 
-    // Default constructor: sets up starting position
-    Position();
+    // Default constructor: doesn't do anything
+    // Must be set up before use, but after calling Zobrist::initialize();
+    Position() = default;
 
     // fen constructor: constructs the position based 
     // on a Forsyth Edward Notation string
     Position(const std::string& fen);
+
+    inline void set_up_startpos() { parse_fen(START_FEN); } 
 
     // Lookups
     inline Piece    piece_on(Square square) const { 
@@ -33,7 +46,9 @@ class Position {
 
     inline CastlingRight get_castling() const { return castling; }
     inline Square get_ep_square() const { return en_passant_square; }
-    inline uint8_t get_rule_50() const { return rule_50; }
+    inline int get_rule_50() const { return rule_50; }
+
+    HashKey zobrist() { return hash; }
 
     Score evaluate() const;
 
@@ -49,7 +64,7 @@ class Position {
     void make_move(const std::string& str);
     void undo_move(Move move, const StoredGameState& gs);
 
-    
+    bool is_repetition() const;
 
     private:
     // Data members
@@ -67,7 +82,10 @@ class Position {
     Score eg_psqt_score = 0;
 
     std::array<Piece, 1000> capture_stack;
+    std::array<HashKey, 1000> hash_stack;
     int ply = 0;
+
+    HashKey hash = 0;
 
     // Helper functions
     void clear();
@@ -86,7 +104,7 @@ std::ostream& operator<<(std::ostream& os, const Position& pos);
 struct StoredGameState {
     CastlingRight prev_castling;
     Square prev_ep;
-    uint8_t prev_r50;
+    int prev_r50;
 
     inline StoredGameState(const Position& pos) {
         prev_castling = pos.get_castling();

@@ -10,20 +10,23 @@ namespace TuffFish {
 
 // These are some very tuned precise accurate piece values:
 // Source: my ah
-constexpr Score PAWN_VALUE_MG   = 96;
-constexpr Score KNIGHT_VALUE_MG = 292;
-constexpr Score BISHOP_VALUE_MG = 326;
-constexpr Score ROOK_VALUE_MG   = 430;
-constexpr Score QUEEN_VALUE_MG  = 938;
+constexpr Score PAWN_VALUE_MG   = 100;
+constexpr Score KNIGHT_VALUE_MG = 300;
+constexpr Score BISHOP_VALUE_MG = 325;
+constexpr Score ROOK_VALUE_MG   = 500;
+constexpr Score QUEEN_VALUE_MG  = 925;
 
-constexpr Score PAWN_VALUE_EG   = 125;
-constexpr Score KNIGHT_VALUE_EG = 275;
-constexpr Score BISHOP_VALUE_EG = 314;
-constexpr Score ROOK_VALUE_EG   = 534;
-constexpr Score QUEEN_VALUE_EG  = 969;
+constexpr Score PAWN_VALUE_EG   = 120;
+constexpr Score KNIGHT_VALUE_EG = 280;
+constexpr Score BISHOP_VALUE_EG = 310;
+constexpr Score ROOK_VALUE_EG   = 540;
+constexpr Score QUEEN_VALUE_EG  = 925;
 
 constexpr Score MG_VALUES[PT_NB] = {PAWN_VALUE_MG, KNIGHT_VALUE_MG, BISHOP_VALUE_MG, ROOK_VALUE_MG, QUEEN_VALUE_MG, INF_CP};
 constexpr Score EG_VALUES[PT_NB] = {PAWN_VALUE_EG, KNIGHT_VALUE_EG, BISHOP_VALUE_EG, ROOK_VALUE_EG, QUEEN_VALUE_EG, INF_CP};
+
+constexpr Score TEMPO_BONUS_MG = 15;
+constexpr Score TEMPO_BONUS_EG = 5;
 
 namespace Evaluate {
 namespace {
@@ -47,7 +50,7 @@ constexpr Score PSQT_MG[PT_NB][SQUARE_NB] = {
         -30,  0, 10, 15, 15, 10,  0,-30,
         -30,  5, 15, 20, 20, 15,  5,-30,
         -30,  0, 15, 20, 20, 15,  0,-30,
-        -30,  5, 10, 15, 15, 10,  5,-30,
+        -40,  5, 10, 15, 15, 10,  5,-40,
         -40,-20,  0,  5,  5,  0,-20,-40,
         -50,-40,-30,-30,-30,-30,-40,-50,
     },

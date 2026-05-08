@@ -10,15 +10,17 @@
 namespace TuffFish {
 namespace UCI {
 
-    
-
     inline void info_string(const std::string& msg) {
         std::cout << "info string " << msg << std::endl;
     }
     inline void info_depth(int depth, Score score, uint64_t nodes, uint64_t elapsed, MoveList& pv) {
         std::string score_string;
-        if (std::abs(score) >= MAX_CP) {
-            int mate_dist = (MATE_CP - std::abs(score) + 1) / 2;
+        const int abs_score = std::abs(score);
+
+        // Only report mate scores for values in the expected mate band.
+        // Out-of-band high scores should remain centipawns.
+        if (abs_score >= MAX_CP && abs_score <= MATE_CP) {
+            int mate_dist = (MATE_CP - abs_score + 1) / 2;
 
             if (score < 0) 
                 mate_dist = -mate_dist;

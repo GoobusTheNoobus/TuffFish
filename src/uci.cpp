@@ -1,4 +1,5 @@
 #include "uci.hpp"
+#include "tt.hpp"
 
 namespace TuffFish {
 namespace UCI {
@@ -18,7 +19,7 @@ void stop() {
 }
 
 void handle_uci() {
-    std::cout << "id name TuffChess v1.0.0\n" <<
+    std::cout << "id name TuffChess v1.1.0\n" <<
                     "id author GoobusTheNoobus\n" <<
                     "\nuciok" <<
                     std::endl;    
@@ -119,7 +120,7 @@ void handle_isready() {
     std::cout << "readyok" << std::endl;
 }
 void ucinewgame() {
-    
+    TranspositionTable::clear();
 }
 
 
@@ -151,6 +152,9 @@ void dispatch(const std::string& cmd, std::istringstream& iss) {
 void loop() {
     Bitboards::initialize();
     Evaluate::initialize();
+    Zobrist::initialize();
+
+    position.set_up_startpos();
 
     while (true) {
         std::string command;

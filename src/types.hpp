@@ -5,11 +5,14 @@
 #include <array>
 #include <sstream>
 #include <iostream>
+#include <vector>
 
 namespace TuffFish {
 using Bitboard = uint64_t;
+using HashKey  = uint64_t;
 
 class Position;
+struct StoredGameState;
 
 enum Square: uint8_t {
 A1, B1, C1, D1, E1, F1, G1, H1,
@@ -80,8 +83,12 @@ enum CastlingRight: uint8_t {
     BLACK_QS = 8,
 
     WHITE_CASTLING = WHITE_KS | WHITE_QS,
-    BLACK_CASTLING = BLACK_KS | BLACK_QS
+    BLACK_CASTLING = BLACK_KS | BLACK_QS,
+    CASTLING_RIGHTS_NB = 16
 };
+
+inline CastlingRight operator++(CastlingRight& r) { return r = CastlingRight(r + 1); }
+inline CastlingRight operator++(CastlingRight& r, int) { CastlingRight old = r; ++r; return old; }
 
 enum Direction: int8_t {
     NORTH = 8,
@@ -159,8 +166,6 @@ inline std::ostream& operator<<(std::ostream& os, MoveList& moves) {
 
 } 
 
-
-
 constexpr const int MAX_PLY = 100;
 
 using Score = int;
@@ -170,5 +175,14 @@ constexpr Score MAX_CP     = MATE_CP - MAX_PLY;
 constexpr Score DRAW_CP    = 0;
 constexpr Score INF_CP     = 20000;
 constexpr Score TIMEOUT_CP = 30000;
+
+// Transposition Tables enums
+
+enum TTFlag: uint8_t {
+    VALUE_NONE,
+    VALUE_EXACT,
+    VALUE_LOWER,
+    VALUE_UPPER,
+};
 
 } // namespace TuffChess

@@ -4,9 +4,12 @@
 
 namespace TuffFish {
 
+// Basic Bitboard operations, just with shortened names.
+// After all, who wants to type "__builtin_popcountll?"
 inline int ctz(Bitboard bb) { return __builtin_ctzll(bb); }
 inline int cnt(Bitboard bb) { return __builtin_popcountll(bb); }
 
+// Helper for looping thru all set bits of the bitboard
 inline int pop_lsb(Bitboard& bb) {
     int lsb = __builtin_ctzll(bb);
     bb &= bb - 1;
