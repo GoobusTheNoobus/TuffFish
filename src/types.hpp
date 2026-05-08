@@ -7,10 +7,20 @@
 #include <iostream>
 #include <vector>
 
+// This file contains a bunch of basic types used throughout the whole
+// project
+
 namespace TuffFish {
+
+// The engine uses bitboards, a de facto standard of chess engines
+// It is an integer of 64 bits, where each bit maps to a square
 using Bitboard = uint64_t;
+
+// A hash key gotten from a position, very low chance of 
+// collision
 using HashKey  = uint64_t;
 
+// Forward declare some objects
 class Position;
 struct StoredGameState;
 
@@ -46,6 +56,8 @@ inline Square parse_square(Rank r, File f) { return Square(r << 3 | f); }
 inline File   file_of(Square s) { return File(s & 7); }
 inline Rank   rank_of(Square s) { return Rank(s >> 3); }
 
+// Operator overloads, making enums support some regular integer
+// operations
 inline Square operator++(Square& s) { return s = Square(s + 1); }
 inline Square operator++(Square& s, int) { Square old = s; ++s; return old; }
 inline File   operator++(File& f) { return f = File(f + 1); }

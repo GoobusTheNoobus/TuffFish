@@ -17,5 +17,5 @@ Version 1.0.0:
 - Pseudo Legal Move Generation
 - Alpha Beta Negamax search
 - Basic Evaluation Function
-- Quiescence Search (+65.9) Note: Results suggests that QSearch may be stronger, as 3-fold repetition detection hasn't been implemented yet, making winning positions drawn due to ignorance on the engine's part.
+- Quiescence Search (+65.9) 
 - Move ordering (+470.4) 

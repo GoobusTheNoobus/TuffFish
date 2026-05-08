@@ -149,23 +149,30 @@ void Position::parse_fen(const std::string& fen) {
     rule_50 = std::stoi(token);
 }
 
-
+// Clears the entire position
 void Position::clear() {
     std::fill(board.begin(), board.end(), NO_PIECE);
     std::fill(piece_bb.begin(), piece_bb.end(), 0);
     std::fill(color_bb.begin(), color_bb.end(), 0);
     occupancy = 0;
 
-    side_to_move = WHITE;
-    castling = NO_CASTLING;
+    side_to_move      = WHITE;
+    castling          = NO_CASTLING;
     en_passant_square = NO_SQUARE;
-    rule_50 = 0;
+    rule_50           = 0;
+
     mg_psqt_score = 0;
     eg_psqt_score = 0;
+
+    // We don't need to reset the stacks, just the stack
+    // counter, since when appending to the stack, the value
+    // gets replaced anyways
     ply = 0;
+
     hash = 0;
 }
 
+// Clears just one square
 void Position::clear(Square square) {
     if (board[square] == NO_PIECE) return;
 
@@ -218,6 +225,9 @@ void Position::place(Square square, Piece piece) {
     hash ^= Zobrist::ps_key(piece, square);
 }
 
+// Make a move based on the given Move "object," which
+// is actually just an integer with information packed 
+// in the bits
 void Position::make_move(Move move) {
     bool is_white = side_to_move == WHITE;
 
@@ -326,7 +336,13 @@ void Position::make_move(Move move) {
     hash ^= Zobrist::side_key();
 }
 
+// Makes a move based on an algebraic string, like
+// e2e4, or a7a8q
 void Position::make_move(const std::string& str) {
+    // Approach: we generate every single move
+    // in the position, and then see which one matches
+    // the given string. We make_move the move "object"
+    // that matches
     MoveList list;
     generate_moves(list);
 

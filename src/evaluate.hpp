@@ -22,9 +22,11 @@ constexpr Score BISHOP_VALUE_EG = 310;
 constexpr Score ROOK_VALUE_EG   = 540;
 constexpr Score QUEEN_VALUE_EG  = 925;
 
+// Store into array, indexed by PieceType enum 
 constexpr Score MG_VALUES[PT_NB] = {PAWN_VALUE_MG, KNIGHT_VALUE_MG, BISHOP_VALUE_MG, ROOK_VALUE_MG, QUEEN_VALUE_MG, INF_CP};
 constexpr Score EG_VALUES[PT_NB] = {PAWN_VALUE_EG, KNIGHT_VALUE_EG, BISHOP_VALUE_EG, ROOK_VALUE_EG, QUEEN_VALUE_EG, INF_CP};
 
+// To avoid fluctuating scores
 constexpr Score TEMPO_BONUS_MG = 15;
 constexpr Score TEMPO_BONUS_EG = 5;
 
@@ -32,7 +34,8 @@ namespace Evaluate {
 namespace {
 
 // =========================== Piece Square Tables ===========================
-
+// We assign an offset (in centipawns, of course) for each square of each piece
+// type, which affects how much that piece is worth.
 constexpr Score PSQT_MG[PT_NB][SQUARE_NB] = {
     {
          0,  0,  0,  0,  0,  0,  0,  0,
