@@ -8,6 +8,10 @@ Features:
 - Negamax alpha beta search
 - Basic Evaluation
 
+Version 1.2.0
+- Mobility Evaluation (+173.3)
+- Passed Pawn Evaluation (+108.1)
+
 Version 1.1.0
 - Repetition Detection 
 - Transposition Table (+154.4)

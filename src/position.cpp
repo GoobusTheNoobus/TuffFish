@@ -62,7 +62,11 @@ std::ostream& operator<<(std::ostream& os, const Position& pos) {
     }
     os << "  +---+---+---+---+---+---+---+---+\n";
     os << "    A   B   C   D   E   F   G   H\n\n";
-    os << "   Evaluation: +6.7 Haha SIX SEVENNNN\n\n";
+
+    Score eval_results = pos.evaluate();
+    std::string eval_string = (eval_results >= 0 ? "+" : "-") + std::to_string(std::abs(eval_results / 100.0));
+
+    os << "   Evaluation: " << eval_string << "\n";
 
     return os;
 }
@@ -161,8 +165,8 @@ void Position::clear() {
     en_passant_square = NO_SQUARE;
     rule_50           = 0;
 
-    mg_psqt_score = 0;
-    eg_psqt_score = 0;
+    psqt.mg = 0;
+    psqt.eg = 0;
 
     // We don't need to reset the stacks, just the stack
     // counter, since when appending to the stack, the value
@@ -187,13 +191,13 @@ void Position::clear(Square square) {
     color_bb[color] &= mask;
     occupancy &= mask;
 
-    mg_psqt_score = color == WHITE ? 
-                            (mg_psqt_score - Evaluate::PSQT_VALUE_MG[pt][square ^ 56]): 
-                            (mg_psqt_score + Evaluate::PSQT_VALUE_MG[pt][square]);
+    psqt.mg = color == WHITE ? 
+                            (psqt.mg - Evaluate::PSQT_VALUE_MG[pt][square ^ 56]): 
+                            (psqt.mg + Evaluate::PSQT_VALUE_MG[pt][square]);
     
-    eg_psqt_score = color == WHITE ? 
-                            (eg_psqt_score - Evaluate::PSQT_VALUE_EG[pt][square ^ 56]): 
-                            (eg_psqt_score + Evaluate::PSQT_VALUE_EG[pt][square]);
+    psqt.eg = color == WHITE ? 
+                            (psqt.eg - Evaluate::PSQT_VALUE_EG[pt][square ^ 56]): 
+                            (psqt.eg + Evaluate::PSQT_VALUE_EG[pt][square]);
 
     hash ^= Zobrist::ps_key(piece, square);
 
@@ -214,13 +218,13 @@ void Position::place(Square square, Piece piece) {
     color_bb[color_of(piece)] |= mask;
     occupancy |= mask;
 
-    mg_psqt_score = color == WHITE ? 
-                            (mg_psqt_score + Evaluate::PSQT_VALUE_MG[pt][square ^ 56]): 
-                            (mg_psqt_score - Evaluate::PSQT_VALUE_MG[pt][square]);
+    psqt.mg = color == WHITE ? 
+                            (psqt.mg + Evaluate::PSQT_VALUE_MG[pt][square ^ 56]): 
+                            (psqt.mg - Evaluate::PSQT_VALUE_MG[pt][square]);
     
-    eg_psqt_score = color == WHITE ? 
-                            (eg_psqt_score + Evaluate::PSQT_VALUE_EG[pt][square ^ 56]): 
-                            (eg_psqt_score - Evaluate::PSQT_VALUE_EG[pt][square]);
+    psqt.eg = color == WHITE ? 
+                            (psqt.eg + Evaluate::PSQT_VALUE_EG[pt][square ^ 56]): 
+                            (psqt.eg - Evaluate::PSQT_VALUE_EG[pt][square]);
 
     hash ^= Zobrist::ps_key(piece, square);
 }
@@ -434,14 +438,12 @@ Score Position::evaluate() const {
 
     // Piece Square Table
     int phase = Evaluate::game_phase(this);
-    int mg_phase = phase;
-    int eg_phase = 24 - phase;
 
-    Score mg_score = mg_psqt_score + (white_to_move() ? TEMPO_BONUS_MG: -TEMPO_BONUS_MG);
-    Score eg_score = eg_psqt_score + (white_to_move() ? TEMPO_BONUS_EG: -TEMPO_BONUS_EG);
 
     // Taper between EG and MG score based on game phase
-    Score score = (mg_score * mg_phase + eg_score * eg_phase) / 24;
+    Score score = psqt.compute(phase) + Evaluate::positional(this, phase);
+
+    score += side_to_move == WHITE ? TEMPO_BONUS : -TEMPO_BONUS;
 
     return side_to_move == WHITE ? score: -score;
 }

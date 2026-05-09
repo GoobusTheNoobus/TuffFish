@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types.hpp"
+#include "evaluate.hpp"
 
 namespace TuffFish {
 
@@ -78,8 +79,7 @@ class Position {
     Square        en_passant_square;
     int           rule_50 = 0;
 
-    Score mg_psqt_score = 0;
-    Score eg_psqt_score = 0;
+    ScorePair psqt;
 
     std::array<Piece, 1000> capture_stack;
     std::array<HashKey, 1000> hash_stack;

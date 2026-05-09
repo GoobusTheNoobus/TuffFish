@@ -2,9 +2,17 @@
 
 #include "types.hpp"
 #include "bitboards.hpp"
-#include "position.hpp"
 
 namespace TuffFish {
+
+struct ScorePair {
+    Score mg = 0;
+    Score eg = 0;
+
+    Score compute(int phase) const {
+        return (mg * phase + eg * (24 - phase)) / 24;
+    }
+};
 
 // =========================== Evaluation Constants ===========================
 
@@ -27,8 +35,8 @@ constexpr Score MG_VALUES[PT_NB] = {PAWN_VALUE_MG, KNIGHT_VALUE_MG, BISHOP_VALUE
 constexpr Score EG_VALUES[PT_NB] = {PAWN_VALUE_EG, KNIGHT_VALUE_EG, BISHOP_VALUE_EG, ROOK_VALUE_EG, QUEEN_VALUE_EG, INF_CP};
 
 // To avoid fluctuating scores
-constexpr Score TEMPO_BONUS_MG = 15;
-constexpr Score TEMPO_BONUS_EG = 5;
+constexpr Score TEMPO_BONUS = 25;
+
 
 namespace Evaluate {
 namespace {
@@ -179,21 +187,12 @@ inline void initialize() {
 
 // =========================== Game Phase ===========================
 
-// Pointer because the argument is passed as 'this'
-inline int game_phase(const Position* pos) {
-    static constexpr const int phase_inc[PIECE_NB] = {0, 1, 1, 2, 4, 0, 0, 1, 1, 2, 4, 0};
+int game_phase(const Position* pos);
+Score positional(const Position* pos, int phase);
+} // namespace Evaluate
 
-    int phase = 0;
-    phase += phase_inc[W_KNIGHT] * cnt(pos->bitboard(W_KNIGHT));
-    phase += phase_inc[B_KNIGHT] * cnt(pos->bitboard(B_KNIGHT));
-    phase += phase_inc[W_BISHOP] * cnt(pos->bitboard(W_BISHOP));
-    phase += phase_inc[B_BISHOP] * cnt(pos->bitboard(B_BISHOP));
-    phase += phase_inc[W_ROOK]   * cnt(pos->bitboard(W_ROOK));
-    phase += phase_inc[B_ROOK]   * cnt(pos->bitboard(B_ROOK));
-    phase += phase_inc[W_QUEEN]  * cnt(pos->bitboard(W_QUEEN));
-    phase += phase_inc[B_QUEEN]  * cnt(pos->bitboard(B_QUEEN));
 
-    return phase;
-}
-}
+
+
+
 } // namespace TuffFish
