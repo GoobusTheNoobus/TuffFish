@@ -8,6 +8,9 @@
 #include <thread>
 
 namespace TuffFish {
+
+const std::string VERSION = "v1.2.1";
+
 namespace UCI {
 
     inline void info_string(const std::string& msg) {
@@ -17,8 +20,6 @@ namespace UCI {
         std::string score_string;
         const int abs_score = std::abs(score);
 
-        // Only report mate scores for values in the expected mate band.
-        // Out-of-band high scores should remain centipawns.
         if (abs_score >= MAX_CP && abs_score <= MATE_CP) {
             int mate_dist = (MATE_CP - abs_score + 1) / 2;
 

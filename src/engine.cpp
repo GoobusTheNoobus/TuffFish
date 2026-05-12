@@ -29,10 +29,14 @@ inline bool should_stop() {
 void request_stop() { stop_.store(true); }
 
 // =========================== Search Settings ===========================
-// Barely any
+
 constexpr int QS_MAX_DEPTH        = 32;
 constexpr bool USE_QSEARCH        = true;
+constexpr bool USE_NMP            = true;
 constexpr int DELTA_MARGIN        = MG_VALUES[PAWN] * 2;
+constexpr int NMP_MIN_DEPTH       = 3;
+constexpr int NMP_BASE_REDUCTION  = 3;
+constexpr int NMP_MIN_PHASE       = 10;
 
 inline Score score_to_tt(Score score, int plies_from_root) {
     if (score >= MAX_CP) return score + plies_from_root;
@@ -61,6 +65,7 @@ static constexpr Score PROMO_SCORE_BONUS[] = {
     ROOK_VALUE_MG   - PAWN_VALUE_MG,
     QUEEN_VALUE_MG  - PAWN_VALUE_MG
 };
+
 
 // Stockfish does this btw
 // Instead of a raw move list and looping thru every single move,
@@ -131,16 +136,16 @@ struct MovePick {
 // Main search recursive function
 // Uses a negamax framework 
 // score = -negamax(-b, -a)
-Score negamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score beta) {
+Score negamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score beta, bool null_allowed) {
     if (pos.is_repetition()) return DRAW_CP;
 
     info.nodes++;
-    
+
     if (should_stop())
         return TIMEOUT_CP;
-    
+
     info.plies_from_root++;
-    
+
     if (depth == 0) {
         info.plies_from_root--;
         if constexpr (USE_QSEARCH) {
@@ -150,11 +155,11 @@ Score negamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score bet
             return pos.evaluate();
         }
     }
-    
+
     // TT probe (before generating moves)
-    // 
+    //
     // We first check whether this exact position was already searched.
-    // 
+    //
     // If stored depth is deep enough:
     // - EXACT: return immediately (no need to search pos again)
     // - LOWER: raise alpha (position is at least this good)
@@ -162,10 +167,9 @@ Score negamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score bet
 
     // If alpha >= beta after applying bounds, this node is resolved and we can
     // cut off without exploring moves.
-    
+
     const Score alpha_orig = alpha;
     const Score beta_orig = beta;
-    // Used for transposition tables
     const HashKey key = pos.zobrist();
     Move tt_move = 0;
 
@@ -191,13 +195,44 @@ Score negamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score bet
         }
     }
 
-    // We store the game infos of this position before modifying
-    // to be able to restore it
-    StoredGameState gs(pos);
+    Color moving_color = pos.get_side();
+    bool in_check = pos.is_in_check(moving_color);
 
+    // Null Move Pruning
+    if constexpr (USE_NMP)
+    if (null_allowed
+        && depth >= NMP_MIN_DEPTH
+        && !in_check
+        && Evaluate::game_phase(&pos) >= NMP_MIN_PHASE
+        && beta < MAX_CP) {
+
+        const int reduction = NMP_BASE_REDUCTION + (depth >= 6 ? 1 : 0);
+        const int null_depth = depth - reduction - 1;
+
+        if (null_depth > 0) {
+            StoredGameState null_gs(pos);
+            pos.make_move(0);
+
+            Score null_score = -negamax(info, pos, null_depth, -beta, -beta + 1, false);
+
+            pos.undo_move(0, null_gs);
+
+            if (null_score == -TIMEOUT_CP) {
+                info.plies_from_root--;
+                return TIMEOUT_CP;
+            }
+
+            if (null_score >= beta) {
+                info.plies_from_root--;
+                return beta;
+            }
+        }
+    }
+
+    StoredGameState gs(pos);
+    
     MovePick moves(pos, tt_move);
 
-    Color moving_color = pos.get_side();
     Score best_score = -INF_CP;
     Move best_move = 0;
 
@@ -214,7 +249,7 @@ Score negamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score bet
         }
         ++legal_moves;
 
-        Score score = -negamax(info, pos, depth - 1, -beta, -alpha);
+        Score score = -negamax(info, pos, depth - 1, -beta, -alpha, true);
 
         if (score == -TIMEOUT_CP) {
             pos.undo_move(move, gs);
@@ -235,14 +270,14 @@ Score negamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score bet
         }
         alpha = std::max(alpha, score);
 
-        if (alpha >= beta) 
+        if (alpha >= beta)
             break;
     }
 
     // No legal moves
     if (legal_moves == 0) {
         Score terminal_score = DRAW_CP;
-        if (pos.is_in_check(moving_color))
+        if (in_check)
             terminal_score = -(MATE_CP - info.plies_from_root);
 
         TranspositionTable::put(key, score_to_tt(terminal_score, info.plies_from_root), 0, depth, VALUE_EXACT);
@@ -251,7 +286,6 @@ Score negamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score bet
         return terminal_score;
     }
 
-    
     // TT store
     // We store what this node proved;
     // - VALUE_UPPER: score <= original_alpha
@@ -264,7 +298,7 @@ Score negamax(SearchInfo& info, Position& pos, int depth, Score alpha, Score bet
     else if (best_score >= beta_orig) flag = VALUE_LOWER;
 
     TranspositionTable::put(key, score_to_tt(best_score, info.plies_from_root), best_move, depth, flag);
-    
+
     info.plies_from_root--;
     return best_score;
 }
@@ -350,6 +384,24 @@ void search(Position& pos, int depth_max, int movetime) {
     StoredGameState gs(pos);
     
     Color moving_color = pos.get_side();
+    Move fallback_move = 0;
+
+    // Precompute one legal root move so we never emit an illegal "bestmove 0000"
+    // when timing expires before finishing a full iteration.
+    {
+        MoveList root_moves;
+        pos.generate_moves(root_moves);
+        for (Move m: root_moves) {
+            pos.make_move(m);
+            bool legal = !pos.is_in_check(moving_color);
+            pos.undo_move(m, gs);
+
+            if (legal) {
+                fallback_move = m;
+                break;
+            }
+        }
+    }
 
     Score prev_score = 0;
     Move  prev_move  = 0;
@@ -440,9 +492,14 @@ void search(Position& pos, int depth_max, int movetime) {
     }
 
     if (prev_move == 0) {
-        UCI::info_string("No legal move selected");
-        std::cout << "bestmove 0000" << std::endl;
-        return;
+        if (fallback_move != 0) {
+            UCI::info_string("Using fallback legal move after early stop");
+            prev_move = fallback_move;
+        } else {
+            UCI::info_string("No legal move selected");
+            std::cout << "bestmove 0000" << std::endl;
+            return;
+        }
     }
 
     std::cout << "bestmove " << algebraic(prev_move) << std::endl;
@@ -514,5 +571,100 @@ void perft_divide(Position& pos, int depth) {
 
     std::cout << "Total Nodes: " << total << std::endl;
     std::cout << "Nodes Per Second: " << (uint64_t)(total / duration_cast<milliseconds>(end - start).count() * 1000) << std::endl;
+}
+
+// =========================== GUI ===========================
+
+// This is a function where instead of printing the results, it returns and writes to 
+// an info struct
+void console_ui_search(ConsoleUISearchOutput* output, Position pos, int movetime) {
+    StoredGameState gs(pos);
+    
+    Color moving_color = pos.get_side();
+
+    Score prev_score = 0;
+    Move  prev_move  = 0;
+
+    // Set timing information
+    start = steady_clock::now();
+    time_limit = movetime;
+    stop_.store(false);
+
+    SearchInfo info;
+
+    // Iterative Deepening container for DFS search
+    int depth;
+    for (depth = 1; depth <= MAX_PLY; ++depth) {
+        if (should_stop()) break;
+
+        Score best_score = -INF_CP;
+        Move best_move = 0;
+
+        Move root_tt_move = 0;
+        if (HashEntry* entry = TranspositionTable::get(pos.zobrist()))
+            root_tt_move = entry->best_move;
+
+        MovePick list(pos, root_tt_move);
+        const Score alpha = -INF_CP;
+        const Score beta  = INF_CP;
+
+        int legal_moves = 0;
+        Move* p;
+        while ((p = list.next())) {
+            Move move = *p;
+            pos.make_move(move);
+
+            if (pos.is_in_check(moving_color)) {
+                pos.undo_move(move, gs);
+                continue;
+            }  
+            Score score = -negamax(info, pos, depth - 1, -beta, -alpha);
+
+            pos.undo_move(move, gs);
+
+            if (should_stop()) {
+                best_move = 0;
+                best_score = TIMEOUT_CP;
+
+                break;
+            }
+
+            if (score > best_score) {
+                best_move = move;
+                best_score = score;
+            }
+            
+            ++legal_moves;
+        }
+
+        // No legal moves
+        if (depth == 1) {
+            if (legal_moves == 0) {
+                UCI::info_string(pos.is_in_check(moving_color)
+                    ? "No legal moves (checkmate)"
+                    : "No legal moves (stalemate)");
+                std::cout << "bestmove 0000" << std::endl;
+                return;
+            }
+        }
+
+        if (best_score != TIMEOUT_CP && best_move != 0) {
+            prev_score = best_score;
+            prev_move = best_move;
+        } else break;
+        
+        
+
+        MoveList pv;
+        pv.add(prev_move);
+
+        output->depth.store(depth, std::memory_order_relaxed);
+        output->movetime.store(duration_cast<milliseconds>(steady_clock::now() - start).count(), std::memory_order_relaxed);
+        output->nodes.store(info.nodes, std::memory_order_relaxed);
+        output->score.store(prev_score, std::memory_order_relaxed);
+        
+    }
+
+    output->move.store(prev_move, std::memory_order_relaxed);
 }
 } // namespace TuffFish

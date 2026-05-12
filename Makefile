@@ -9,7 +9,7 @@ SRC = $(wildcard src/*.cpp)
 OBJ = $(SRC:.cpp=.o)
 DEP = $(OBJ:.o=.d)
 
-TARGET = tufffish
+TARGET = tuff
 
 -include $(DEP)
 
@@ -17,11 +17,11 @@ TARGET = tufffish
 
 # Release build
 release: CXXFLAGS = $(COMMON_FLAGS) $(RELEASE_FLAGS)
-release: clean $(TARGET)
+release: $(TARGET)
 
 # Debug
 debug: CXXFLAGS = $(COMMON_FLAGS) $(DEBUG_FLAGS)
-debug: clean $(TARGET)
+debug: $(TARGET)
 
 $(TARGET): $(OBJ)
 	$(CXX) $(CXXFLAGS) $(OBJ) -o $(TARGET)
@@ -29,7 +29,7 @@ $(TARGET): $(OBJ)
 src/%.o: src/%.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-.PHONY: release debug clean
-
 clean:
 	rm -f $(TARGET) $(OBJ) $(DEP)
+
+.PHONY: release debug clean

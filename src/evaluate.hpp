@@ -185,14 +185,9 @@ inline void initialize() {
     }
 }
 
-// =========================== Game Phase ===========================
-
 int game_phase(const Position* pos);
 Score positional(const Position* pos, int phase);
 } // namespace Evaluate
-
-
-
 
 
 } // namespace TuffFish

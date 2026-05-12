@@ -69,14 +69,16 @@ void compute_mobility(const Position* pos, ScorePair& sp) {
 
 // =========================== Pawn Structures ===========================
 
+constexpr int PASSED_PAWN_NORMALIZATION = 3;
+
 constexpr Score PASSED_PAWN_BONUS_MG[RANK_NB] = {
 //  1    2    3    4    5    6    7
-    0,   5,   8,  12,  45,  80, 100
+    0,   5,   8,  12,  25,  40,  60
 };
 
 constexpr Score PASSED_PAWN_BONUS_EG[RANK_NB] = {
 //  1    2    3    4    5    6    7
-    0,  15,  20,  30,  75, 110, 200
+    0,   5,  15,  30,  45,  60, 100
 };
 
 void compute_passed_pawns(const Position* pos, ScorePair& sp) {
@@ -87,8 +89,8 @@ void compute_passed_pawns(const Position* pos, ScorePair& sp) {
         int lsb = pop_lsb(white_pawns);
         Bitboard required = Bitboards::PASSED_PAWN[WHITE][lsb];
         if (!(required & pos->bitboard(B_PAWN))) {
-            sp.mg += PASSED_PAWN_BONUS_MG[rank_of(Square(lsb))];
-            sp.eg += PASSED_PAWN_BONUS_EG[rank_of(Square(lsb))];
+            sp.mg += PASSED_PAWN_BONUS_MG[rank_of(Square(lsb))] / PASSED_PAWN_NORMALIZATION;
+            sp.eg += PASSED_PAWN_BONUS_EG[rank_of(Square(lsb))] / PASSED_PAWN_NORMALIZATION;
         }
     }
 
@@ -96,8 +98,8 @@ void compute_passed_pawns(const Position* pos, ScorePair& sp) {
         int lsb = pop_lsb(black_pawns);
         Bitboard required = Bitboards::PASSED_PAWN[BLACK][lsb];
         if (!(required & pos->bitboard(W_PAWN))) {
-            sp.mg -= PASSED_PAWN_BONUS_MG[7 - rank_of(Square(lsb))];
-            sp.eg -= PASSED_PAWN_BONUS_EG[7 - rank_of(Square(lsb))];
+            sp.mg -= PASSED_PAWN_BONUS_MG[7 - rank_of(Square(lsb))] / PASSED_PAWN_NORMALIZATION ;
+            sp.eg -= PASSED_PAWN_BONUS_EG[7 - rank_of(Square(lsb))] / PASSED_PAWN_NORMALIZATION;
         }
     }
 }
@@ -125,8 +127,10 @@ int game_phase(const Position* pos) {
 Score positional(const Position* pos, int phase) {
     ScorePair sp;
 
-    compute_mobility(pos, sp);
-    compute_passed_pawns(pos, sp);
+    // compute_mobility(pos, sp);
+
+    // HASN'T PASSED SPRT
+    // compute_passed_pawns(pos, sp);
 
     return sp.compute(phase);
 }

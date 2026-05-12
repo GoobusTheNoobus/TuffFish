@@ -63,11 +63,6 @@ std::ostream& operator<<(std::ostream& os, const Position& pos) {
     os << "  +---+---+---+---+---+---+---+---+\n";
     os << "    A   B   C   D   E   F   G   H\n\n";
 
-    Score eval_results = pos.evaluate();
-    std::string eval_string = (eval_results >= 0 ? "+" : "-") + std::to_string(std::abs(eval_results / 100.0));
-
-    os << "   Evaluation: " << eval_string << "\n";
-
     return os;
 }
 
@@ -233,6 +228,22 @@ void Position::place(Square square, Piece piece) {
 // is actually just an integer with information packed 
 // in the bits
 void Position::make_move(Move move) {
+    if (move == 0) {
+        hash_stack[ply] = hash;
+        capture_stack[ply++] = NO_PIECE;
+
+        if (en_passant_square != NO_SQUARE)
+            hash ^= Zobrist::ep_key(en_passant_square);
+        en_passant_square = NO_SQUARE;
+
+        // A null move is still a reversible non-pawn, non-capture half-move.
+        rule_50++;
+
+        side_to_move = !side_to_move;
+        hash ^= Zobrist::side_key();
+        return;
+    }
+
     bool is_white = side_to_move == WHITE;
 
     Square from_squ = from(move);
@@ -240,17 +251,15 @@ void Position::make_move(Move move) {
     MoveFlag flag_  = flag(move);
 
     Piece moving = board[from_squ];
-    Piece captured = flag_ == EN_PASSANT ? make_piece(PAWN, !side_to_move): board[dest_squ];
+    Piece captured = flag_ == EN_PASSANT ? make_piece(PAWN, !side_to_move) : board[dest_squ];
 
     hash_stack[ply] = hash;
     capture_stack[ply++] = captured;
-    
 
     if (en_passant_square != NO_SQUARE)
         hash ^= Zobrist::ep_key(en_passant_square);
     en_passant_square = NO_SQUARE;
     
-
     clear(from_squ);
 
     switch (flag_) {
@@ -359,6 +368,17 @@ void Position::make_move(const std::string& str) {
 }
 
 void Position::undo_move(Move move, const StoredGameState& gs) {
+    if (move == 0) {
+        side_to_move = !side_to_move;
+        --ply;
+
+        castling = gs.prev_castling;
+        en_passant_square = gs.prev_ep;
+        rule_50 = gs.prev_r50;
+        hash = hash_stack[ply];
+        return;
+    }
+
     side_to_move = !side_to_move;
 
     bool is_white = white_to_move();

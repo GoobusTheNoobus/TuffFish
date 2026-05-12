@@ -19,7 +19,7 @@ void stop() {
 }
 
 void handle_uci() {
-    std::cout << "id name TuffChess v1.2.0\n" <<
+    std::cout << "id name TuffChess " << VERSION << "\n" <<
                     "id author GoobusTheNoobus\n" <<
                     "\nuciok" <<
                     std::endl;    
